@@ -12,6 +12,14 @@
         initializeShell();
     }
 
+    // SPA navigation replaces <main>.innerHTML without a page reload, so
+    // DOMContentLoaded never fires again. Re-run the shared initializer on the
+    // canonical ptg:page-ready signal (same hook tables.js/ptg-tabs.js use) so
+    // freshly-swapped content — e.g. the bulk-receipt toggle — gets wired up.
+    // Every initializer here is idempotent (per-element/per-body *Ready guards),
+    // so re-running never double-binds listeners on surviving elements.
+    window.addEventListener("ptg:page-ready", initializeShell);
+
     function initializeShell() {
         callIfAvailable("initializeLanguageSwitcher");
         initializeFlashAlerts();

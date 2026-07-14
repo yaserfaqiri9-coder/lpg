@@ -2394,6 +2394,19 @@ select.ak-input {
     display: none;
 }
 
+/* Exception: the bulk-receipt form's section head is not a redundant title —
+   it carries the primary "ثبت رسید گروهی" toggle plus select-all/clear actions.
+   The rule above would hide those controls, leaving the awaiting-loadings table
+   with no way to open the form. Keep this one head visible (scoped to the bulk
+   form only, so every other in-form head stays hidden as intended). */
+.ak-form[data-bulk-receipt-form] .ak-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
 .ak-form .ak-form-section + .ak-form-section {
     padding-top: 28px;
     border-top: 1px solid var(--divider);
