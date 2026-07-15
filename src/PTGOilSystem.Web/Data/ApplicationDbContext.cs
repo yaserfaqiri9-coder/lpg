@@ -935,6 +935,20 @@ public class ApplicationDbContext : DbContext
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<PaymentTransaction>()
+            .HasOne(p => p.Company)
+            .WithMany()
+            .HasForeignKey(p => p.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<PaymentTransaction>().HasIndex(p => p.CompanyId);
+
+        modelBuilder.Entity<CashAccount>()
+            .HasOne(a => a.Company)
+            .WithMany()
+            .HasForeignKey(a => a.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<CashAccount>().HasIndex(a => a.CompanyId);
+
+        modelBuilder.Entity<PaymentTransaction>()
             .HasOne(p => p.Customer)
             .WithMany()
             .HasForeignKey(p => p.CustomerId)

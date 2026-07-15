@@ -13,4 +13,5 @@ public sealed class AccountingOptions
 public sealed class AccountingPilotOptions
 {
     public bool ContractBalanceTransfer { get; set; }
+    public bool SupplierPaymentAllocation { get; set; }
 }

@@ -85,6 +85,11 @@ public class CashAccount : BaseEntity
 {
     [Required, MaxLength(50)] public string Code { get; set; } = "";
     [Required, MaxLength(200)] public string Name { get; set; } = "";
+    // مالکیت شرکت (nullable). هیچ رابطه قطعی تاریخی وجود ندارد، بنابراین Backfill نمی‌شود؛
+    // فقط برای رکوردهای جدید/تأییدشده توسط مدیر مالی تعیین می‌گردد. GL جدید بدون Company قطعی
+    // به این حساب متصل نمی‌شود.
+    public int? CompanyId { get; set; }
+    public Company? Company { get; set; }
     public CashAccountType AccountType { get; set; } = CashAccountType.Bank;
     [Required, MaxLength(10)] public string Currency { get; set; } = "USD";
     public bool IsActive { get; set; } = true;
@@ -99,6 +104,11 @@ public class PaymentTransaction : BaseEntity
     public DateTime PaymentDate { get; set; }
     public PaymentDirection Direction { get; set; }
     public PaymentKind PaymentKind { get; set; }
+
+    // مالکیت شرکت (nullable). Backfill فقط از روابط قابل‌اثبات (قرارداد، فروش، مصرف، محموله
+    // تک‌شرکتی) انجام شده؛ رکوردهای مبهم null می‌مانند و به GL جدید متصل نمی‌شوند.
+    public int? CompanyId { get; set; }
+    public Company? Company { get; set; }
 
     public int CashAccountId { get; set; }
     public CashAccount? CashAccount { get; set; }

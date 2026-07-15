@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using PTGOilSystem.Web.Data;
 using PTGOilSystem.Web.Models.Entities;
+using PTGOilSystem.Web.Services.Accounting;
 using PTGOilSystem.Web.Services.Exceptions;
 
 namespace PTGOilSystem.Web.Services;
@@ -45,8 +46,15 @@ public sealed class SupplierPaymentAllocationService : ISupplierPaymentAllocatio
     public const string ReversalLedgerSourceType = "SupplierPaymentAllocationReversal";
 
     private readonly ApplicationDbContext _db;
+    private readonly ISupplierPaymentAllocationAccountingAdapter? _accountingAdapter;
 
-    public SupplierPaymentAllocationService(ApplicationDbContext db) => _db = db;
+    public SupplierPaymentAllocationService(
+        ApplicationDbContext db,
+        ISupplierPaymentAllocationAccountingAdapter? accountingAdapter = null)
+    {
+        _db = db;
+        _accountingAdapter = accountingAdapter;
+    }
 
     public async Task<decimal> GetAllocatableBalanceUsdAsync(int paymentTransactionId, CancellationToken ct = default)
     {
@@ -204,6 +212,13 @@ public sealed class SupplierPaymentAllocationService : ISupplierPaymentAllocatio
 
             await _db.SaveChangesAsync(ct);
 
+            // Dual-write pilot: journal + legacy ledgers share this transaction, so a
+            // posting failure rolls back the whole allocation.
+            if (_accountingAdapter is not null)
+            {
+                await _accountingAdapter.TryPostAllocationAsync(allocation, payment, contract, ct);
+            }
+
             if (transaction is not null)
             {
                 await transaction.CommitAsync(ct);
@@ -292,6 +307,19 @@ public sealed class SupplierPaymentAllocationService : ISupplierPaymentAllocatio
                     description: $"برگشت تخصیص پیش‌پرداخت از قرارداد (#{allocation.Id})"));
 
             await _db.SaveChangesAsync(ct);
+
+            // Dual-write pilot: independent reversal journal; the original journal is
+            // never edited or deleted. Shares this transaction with the legacy rows.
+            if (_accountingAdapter is not null
+                && allocation.PaymentTransaction is not null
+                && allocation.Contract is not null)
+            {
+                await _accountingAdapter.TryPostReversalAsync(
+                    allocation,
+                    allocation.PaymentTransaction,
+                    allocation.Contract,
+                    ct);
+            }
 
             if (transaction is not null)
             {
