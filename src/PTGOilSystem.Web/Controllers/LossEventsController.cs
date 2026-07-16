@@ -21,17 +21,20 @@ public class LossEventsController : Controller
     private readonly IStockService _stock;
     private readonly IAuditService _audit;
     private readonly ILogger<LossEventsController> _logger;
+    private readonly Services.Accounting.IInventoryLossAccountingAdapter? _lossAccounting;
 
     public LossEventsController(
         ApplicationDbContext db,
         IStockService stock,
         IAuditService audit,
-        ILogger<LossEventsController> logger)
+        ILogger<LossEventsController> logger,
+        Services.Accounting.IInventoryLossAccountingAdapter? lossAccounting = null)
     {
         _db = db;
         _stock = stock;
         _audit = audit;
         _logger = logger;
+        _lossAccounting = lossAccounting;
     }
 
     private bool TryGetLocalReturnUrl(string? returnUrl, out string localReturnUrl)
@@ -159,6 +162,11 @@ public class LossEventsController : Controller
         }
 
         await _db.SaveChangesAsync();
+
+        if (_lossAccounting is not null)
+        {
+            await _lossAccounting.TryPostLossReversalAsync(item);
+        }
 
         TempData["ok"] = "رویداد ضایعات لغو شد.";
         if (!string.IsNullOrWhiteSpace(returnUrl) && Url?.IsLocalUrl(returnUrl) == true)
@@ -593,6 +601,11 @@ public class LossEventsController : Controller
                 }
 
                 await _db.SaveChangesAsync();
+
+                if (_lossAccounting is not null)
+                {
+                    await _lossAccounting.TryPostLossAsync(lossEvent);
+                }
 
                 if (transaction is not null)
                 {

@@ -13,15 +13,18 @@ public sealed class LossEventWorkflowService : ILossEventWorkflowService
     private readonly ApplicationDbContext _db;
     private readonly IStockService _stock;
     private readonly IAuditService _audit;
+    private readonly Accounting.IInventoryLossAccountingAdapter? _lossAccounting;
 
     public LossEventWorkflowService(
         ApplicationDbContext db,
         IStockService stock,
-        IAuditService audit)
+        IAuditService audit,
+        Accounting.IInventoryLossAccountingAdapter? lossAccounting = null)
     {
         _db = db;
         _stock = stock;
         _audit = audit;
+        _lossAccounting = lossAccounting;
     }
 
     public LossEventComputation ComputeMetrics(
@@ -362,6 +365,11 @@ public sealed class LossEventWorkflowService : ILossEventWorkflowService
         }
 
         await _db.SaveChangesAsync(ct);
+
+        if (_lossAccounting is not null)
+        {
+            await _lossAccounting.TryPostLossAsync(lossEvent, ct);
+        }
 
         return new LossEventWorkflowResult(lossEvent, movement, metrics);
     }

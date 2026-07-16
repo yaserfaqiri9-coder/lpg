@@ -15,6 +15,13 @@ public interface IAccountingJournalNumberGenerator
     string ForInventoryReceipt(int companyId, int loadingReceiptId);
     string ForSale(int companyId, int salesTransactionId);
     string ForCogs(int companyId, int salesTransactionId);
+    string ForInventoryLoss(int companyId, int lossEventId);
+    string ForInventoryLossReversal(int companyId, int lossEventId);
+    string ForShortageCharge(int companyId, int transportReceiptId);
+    string ForSarrafSettlement(int companyId, int settlementId, int revision);
+    string ForSarrafSettlementReversal(int companyId, int settlementId, int revision);
+    string ForThreeWaySettlement(int companyId, int settlementId);
+    string ForThreeWaySettlementReversal(int companyId, int settlementId);
 }
 
 public sealed class AccountingJournalNumberGenerator : IAccountingJournalNumberGenerator
@@ -139,6 +146,47 @@ public sealed class AccountingJournalNumberGenerator : IAccountingJournalNumberG
             throw new ArgumentOutOfRangeException(nameof(salesTransactionId));
 
         return $"COGS-{companyId:D6}-{salesTransactionId:D10}";
+    }
+
+    public string ForInventoryLoss(int companyId, int lossEventId)
+        => $"LOSS-{ValidateKey(companyId, lossEventId, nameof(lossEventId))}";
+
+    public string ForInventoryLossReversal(int companyId, int lossEventId)
+        => $"LOSSR-{ValidateKey(companyId, lossEventId, nameof(lossEventId))}";
+
+    public string ForShortageCharge(int companyId, int transportReceiptId)
+        => $"SHT-{ValidateKey(companyId, transportReceiptId, nameof(transportReceiptId))}";
+
+    // A sarraf settlement can be edited after posting, so its number carries a revision the same
+    // way a repriced purchase does: each edit reverses the previous revision and posts the next.
+    public string ForSarrafSettlement(int companyId, int settlementId, int revision)
+        => $"SRF-{ValidateRevisionKey(companyId, settlementId, revision, nameof(settlementId))}";
+
+    public string ForSarrafSettlementReversal(int companyId, int settlementId, int revision)
+        => $"SRFR-{ValidateRevisionKey(companyId, settlementId, revision, nameof(settlementId))}";
+
+    public string ForThreeWaySettlement(int companyId, int settlementId)
+        => $"TWS-{ValidateKey(companyId, settlementId, nameof(settlementId))}";
+
+    public string ForThreeWaySettlementReversal(int companyId, int settlementId)
+        => $"TWSR-{ValidateKey(companyId, settlementId, nameof(settlementId))}";
+
+    private static string ValidateKey(int companyId, int entityId, string entityIdName)
+    {
+        if (companyId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(companyId));
+        if (entityId <= 0)
+            throw new ArgumentOutOfRangeException(entityIdName);
+
+        return $"{companyId:D6}-{entityId:D10}";
+    }
+
+    private static string ValidateRevisionKey(int companyId, int entityId, int revision, string entityIdName)
+    {
+        if (revision < 0)
+            throw new ArgumentOutOfRangeException(nameof(revision));
+
+        return $"{ValidateKey(companyId, entityId, entityIdName)}-{revision:D3}";
     }
 
     private static string ValidatePurchaseKey(int companyId, int loadingRegisterId, int revision)

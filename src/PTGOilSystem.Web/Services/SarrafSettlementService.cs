@@ -63,8 +63,16 @@ public sealed class SarrafSettlementService : ISarrafSettlementService
 
     private readonly ApplicationDbContext _db;
 
-    public SarrafSettlementService(ApplicationDbContext db)
-        => _db = db;
+    // مرحلهٔ ۸ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe.
+    private readonly Accounting.ISarrafSettlementAccountingAdapter? _settlementAccounting;
+
+    public SarrafSettlementService(
+        ApplicationDbContext db,
+        Accounting.ISarrafSettlementAccountingAdapter? settlementAccounting = null)
+    {
+        _db = db;
+        _settlementAccounting = settlementAccounting;
+    }
 
     public SarrafSettlementCalculation Calculate(SarrafSettlementCommand command)
     {
@@ -170,6 +178,12 @@ public sealed class SarrafSettlementService : ISarrafSettlementService
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (_settlementAccounting is not null)
+        {
+            await _settlementAccounting.TryPostSettlementAsync(settlement, cancellationToken);
+        }
+
         if (transaction is not null)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -213,6 +227,13 @@ public sealed class SarrafSettlementService : ISarrafSettlementService
         if (settlement.ExchangeDifferenceLedgerEntry is not null)
         {
             _db.LedgerEntries.Add(BuildReversalLedger(settlement.ExchangeDifferenceLedgerEntry, settlement, "ویرایش تسویه صراف", EditReversalSourceType));
+        }
+
+        // سند دوطرفهٔ نسخهٔ قبلی هم باید برگردد تا نسخهٔ بعدی روی یک مانده‌ی پاک بنشیند —
+        // دقیقاً همان الگوی بازقیمت‌گذاری مرحلهٔ ۶. اسناد Posted تغییر نمی‌کنند؛ فقط معکوس می‌شوند.
+        if (_settlementAccounting is not null)
+        {
+            await _settlementAccounting.TryPostSettlementReversalAsync(settlement, cancellationToken);
         }
 
         settlement.SettlementDate = command.SettlementDate.Date;
@@ -269,6 +290,12 @@ public sealed class SarrafSettlementService : ISarrafSettlementService
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (_settlementAccounting is not null)
+        {
+            await _settlementAccounting.TryPostSettlementAsync(settlement, cancellationToken);
+        }
+
         if (transaction is not null)
         {
             await transaction.CommitAsync(cancellationToken);
@@ -312,6 +339,11 @@ public sealed class SarrafSettlementService : ISarrafSettlementService
         settlement.CancelledAtUtc = DateTime.UtcNow;
         settlement.CancelReason = Clean(reason);
         await _db.SaveChangesAsync(cancellationToken);
+
+        if (_settlementAccounting is not null)
+        {
+            await _settlementAccounting.TryPostSettlementReversalAsync(settlement, cancellationToken);
+        }
 
         if (transaction is not null)
         {

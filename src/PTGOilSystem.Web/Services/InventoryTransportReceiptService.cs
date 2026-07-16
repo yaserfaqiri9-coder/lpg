@@ -26,22 +26,25 @@ public sealed class InventoryTransportReceiptService
     private readonly IInventoryLineageWriter _lineage;
 
     // writer اختیاری: call siteهای موجود بدون تغییر می‌مانند و در نبودِ آن writerِ خاموش (no-op) استفاده می‌شود.
-    // مراحل ۵ و ۷ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe.
+    // مراحل ۵، ۷ و ۸ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe.
     private readonly Accounting.IExpenseAccountingAdapter? _expenseAccounting;
     private readonly Accounting.ISalesAccountingAdapter? _salesAccounting;
+    private readonly Accounting.IShortageChargeAccountingAdapter? _shortageAccounting;
 
     public InventoryTransportReceiptService(
         ApplicationDbContext db,
         ICurrencyConversionService currencyConversion,
         IInventoryLineageWriter? lineage = null,
         Accounting.IExpenseAccountingAdapter? expenseAccounting = null,
-        Accounting.ISalesAccountingAdapter? salesAccounting = null)
+        Accounting.ISalesAccountingAdapter? salesAccounting = null,
+        Accounting.IShortageChargeAccountingAdapter? shortageAccounting = null)
     {
         _db = db;
         _currencyConversion = currencyConversion;
         _lineage = lineage ?? InventoryLineageWriterFactory.Disabled(db);
         _expenseAccounting = expenseAccounting;
         _salesAccounting = salesAccounting;
+        _shortageAccounting = shortageAccounting;
     }
 
     public async Task<InventoryTransportLeg?> LoadLegAsync(int id, bool tracking)
@@ -759,6 +762,11 @@ public sealed class InventoryTransportReceiptService
             DriverId = driverId
         });
         await _db.SaveChangesAsync();
+
+        if (_shortageAccounting is not null)
+        {
+            await _shortageAccounting.TryPostShortageChargeAsync(receipt);
+        }
     }
 
     private async Task<ExpenseType> EnsureReceiptFreightExpenseTypeAsync()

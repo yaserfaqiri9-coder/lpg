@@ -76,6 +76,10 @@ builder.Services.AddScoped<IViaSarrafAccountingAdapter, ViaSarrafAccountingAdapt
 builder.Services.AddScoped<IInventoryValuationService, InventoryValuationService>();
 builder.Services.AddScoped<IPurchaseAccountingAdapter, PurchaseAccountingAdapter>();
 builder.Services.AddScoped<ISalesAccountingAdapter, SalesAccountingAdapter>();
+builder.Services.AddScoped<IInventoryLossAccountingAdapter, InventoryLossAccountingAdapter>();
+builder.Services.AddScoped<IShortageChargeAccountingAdapter, ShortageChargeAccountingAdapter>();
+builder.Services.AddScoped<ISarrafSettlementAccountingAdapter, SarrafSettlementAccountingAdapter>();
+builder.Services.AddScoped<IThreeWaySettlementAccountingAdapter, ThreeWaySettlementAccountingAdapter>();
 // ---- Inventory Lineage (Phase 2). Feature flags + parallel reference-layer services. ----
 builder.Services.Configure<PTGOilSystem.Web.Configuration.LineageOptions>(
     builder.Configuration.GetSection(PTGOilSystem.Web.Configuration.LineageOptions.SectionName));

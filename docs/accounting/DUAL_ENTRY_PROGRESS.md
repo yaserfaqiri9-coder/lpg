@@ -18,20 +18,23 @@
 | ۵ | مصارف، کرایه، کمیسیون | ✅ کامل (همه‌ی ۹ مسیر + Reversal لغو) |
 | ۶ | خرید، موجودی، بهای تمام‌شده | ✅ خرید + موجودی + Reversal (COGS در مرحله ۷) |
 | ۷ | فروش و COGS | ✅ کامل (میانگین موزون متحرک) |
-| ۸ | کسری، ضایعات، صراف، تسعیر | ⛔ شروع‌نشده |
+| ۸ | کسری، ضایعات، صراف | ✅ کامل (تسعیر با تأیید کاربر به مرحله ۱۳ موکول شد) |
 | ۹ | Cutover و AccountingReadiness | ⛔ شروع‌نشده |
 | ۱۰ | UI ساده‌ی سال مالی | ⛔ شروع‌نشده |
 | ۱۱ | قفل دوره و AccountingDate | ⛔ شروع‌نشده |
 | ۱۲ | چک‌لیست بستن سال | ⛔ شروع‌نشده |
-| ۱۳ | Trial Close | ⛔ شروع‌نشده |
+| ۱۳ | Trial Close (+ تسعیر پایان‌دوره) | ⛔ شروع‌نشده |
 | ۱۴ | Final Close | ⛔ شروع‌نشده |
 | ۱۵ | بازگشایی کنترل‌شده | ⛔ شروع‌نشده |
 
 **Build فعلی:** ۰ خطا (۳ هشدار پیش‌موجود و نامرتبط: `_Layout.cshtml` ×۲، `MaintenanceController` EF1002).
 **تست‌های Accounting مرتبط:** Accounting Core + DatabaseSafety + ContractBalanceTransfer +
 SupplierPaymentAllocation + PaymentCompanyOwnership + مرحله ۴ (۴۳ تست) + مرحله ۵ (۱۴ تست) +
-مرحله ۶ (۱۱ تست) + **Reversalها (۱۱ تست جدید)**.
-**Full Suite:** ۱۰۳۳ پاس / ۱۸ شکست قدیمی (همان لیست baseline زیر، تک‌به‌تک منطبق) + ۰ شکست جدید.
+مرحله ۶ (۱۱ تست) + Reversalها (۱۱ تست) + مرحله ۷ (۱۷ تست) + **مرحله ۸ (۳۲ تست جدید)**.
+**آخرین اجرا (مرحله ۸ + همهٔ Accounting + نواحی دست‌خورده):** ۲۵۳ پاس / ۱ شکست، و آن یک شکست
+جزو همان baseline ۱۸تایی زیر است → **۰ شکست جدید**.
+**⚠️ Full Suite کامل:** آخرین اجرای کامل مربوط به پایان مرحله ۶ است (۱۰۳۳ پاس + ۱۸ شکست قدیمی).
+بعد از مراحل ۷ و ۸ فقط تست‌های هدفمند اجرا شده — قبل از Cutover یک اجرای کامل لازم است.
 
 ---
 
@@ -440,17 +443,128 @@ legacy عوض می‌کند بدون اینکه هیچ کاسه‌ای تکان 
 
 ---
 
+## مرحله ۸ — کسری، ضایعات، صراف ✅
+
+### پنج تصمیم تجاری که کاربر تأیید کرد (حدس زده نشد)
+1. **ضایعات** → فقط Stageهایی که واقعاً موجودی را کم می‌کنند
+   (`TankNaturalLoss`، `ManualAdjustment`، `TankFinalSettlement`) سند می‌گیرند.
+2. **کسری** → `Cr 5400 Inventory Loss`؛ یعنی وصولی از راننده زیان ضایعات را جبران می‌کند،
+   نه اینکه درآمد جدا باشد.
+3. **دامنهٔ صراف** → هم `SarrafSettlement` کامل، هم `ThreeWaySettlement` با `PayeeType=Sarraf`.
+4. **بدهی ما به صراف** → `SarrafChargedAmountUsd` (چیزی که صراف واقعاً از ما گرفت).
+5. **تسعیر پایان‌دوره** → **موکول به مرحله ۱۳** (Trial Close). هیچ مسیر legacy ندارد.
+
+### ⚠️ سه مورد از چهار مورد، mirror نیستند — رفتار جدیدند
+این را باید قبل از هر بازبینی دانست:
+- **ضایعات**: `LossEvent` فقط موجودی را تکان می‌دهد و **صفر سطر دفتر** می‌نویسد. حساب `5400`
+  تا امروز هرگز پست نشده بود. پس عددِ سند، **اولین بیان پولیِ ضایعات در کل سیستم** است و هیچ
+  عدد legacy برای مقایسه ندارد.
+- **طرف صراف در `SarrafSettlement`**: legacy فقط یک سطر طرف‌حساب می‌نویسد و «ماندهٔ صراف» را
+  در حافظه بازمی‌سازد (`SarrafsController.Details`). سطر صراف اصلاً وجود ندارد.
+- **تسعیر**: نه Entity، نه سرویس، نه Migration. `4200`/`5300` هرگز پست نشده‌اند.
+
+### فایل‌های جدید
+- `Services/Accounting/InventoryLossAccountingAdapter.cs`
+- `Services/Accounting/ShortageChargeAccountingAdapter.cs`
+- `Services/Accounting/SarrafSettlementAccountingAdapter.cs`
+- `Services/Accounting/ThreeWaySettlementAccountingAdapter.cs`
+- `tests/.../Stage8AccountingAdapterTests.cs` (۳۲ تست)
+
+**هیچ Migration جدیدی لازم نشد** — هیچ Entity، DbContext یا ساختار دیتابیسی تغییر نکرد.
+
+### Mapping پیاده‌شده
+```
+ضایعات   : Dr 5400 Inventory Loss    Cr 1300 Inventory
+           مبلغ = میانگین موزون متحرکِ همان کاسه‌ای که COGS از آن می‌خورد
+کسری     : Dr 2300 Freight Payable   Cr 5400 Inventory Loss   (Party=ServiceProvider یا Driver)
+           مبلغ = ShortageChargeUsd، دلاری با نرخ ۱
+صراف     : Dr/Cr حساب کنترلِ طرف‌حساب  = SupplierLedgerAmountUsd
+           Cr/Dr 2100 AP (Party=Sarraf) = SarrafChargedAmountUsd
+           اختلاف → 5300 Exchange Loss یا 4200 Exchange Gain
+سه‌جانبه : Dr 2100 AP (Party=Supplier) = SupplierAcceptedUsd
+           Cr 1200 AR (Party=Customer) = CustomerPaidUsd
+           اختلاف → 5300 یا 4200؛ **هیچ سطر صرافی ندارد**
+```
+
+- **ضایعات**: مقدار از همان `InventoryMovement` می‌آید که legacy نوشته، نه محاسبهٔ دوباره.
+  ارزش از `IInventoryValuationService` — همان مرجعی که COGS را قیمت می‌گذارد، پس ضایعات و
+  فروش از یک کاسه هرگز سر بهای کالا اختلاف پیدا نمی‌کنند. کاسه کم بیاورد →
+  `INVENTORY_NOT_VALUED` و کاسه دست‌نخورده (تست‌شده). اگر Post شکست بخورد، آنچه از کاسه
+  برداشته شده برگردانده می‌شود.
+- **کسری**: `2300` حساب کنترلِ همان راننده/شرکت خدماتی است — همان حسابی که مرحله ۵ کرایه‌اش را
+  بستانکار می‌کند. پس بدهکار کردنش دقیقاً یعنی «بابت آنچه نرسید به ما بدهکار است». legacy هم
+  کرایه را دست نمی‌زند و این دو در ماندهٔ راننده به هم می‌رسند، نه در یک سطر.
+- **سه‌جانبه**: نبودِ سطر صراف عمدی است — وقتی هر دو طرف هم‌زمان تسویه می‌شوند صراف چیزی نگه
+  نمی‌دارد. `SarrafId` فقط منشأ است. legacy هم صریحاً همین را می‌گوید و هیچ `LedgerEntry` با
+  `SarrafId` نمی‌سازد.
+- **قاعدهٔ ضدِ نرخ‌سازی**: هر دو سطر پولیِ صراف و سه‌جانبه باید در بازتولیدِ
+  `round(مبلغ × نرخ, 4)` سالم بمانند، وگرنه `INVALID_*_CONVERSION` و legacy-only — همان قاعده‌ای
+  که ViaSarrafِ غیر-USD را بیرون نگه می‌دارد (تست‌شده).
+
+### اتصال
+- ضایعات: `LossEventWorkflowService.CreateAsync` (مسیر مشترک — `StorageTanksController.SettleFinal`
+  از همین‌جا می‌آید) + `LossEventsController.Create` و `Cancel`.
+- کسری: `InventoryTransportReceiptService.SyncShortageDebtAsync` — دقیقاً کنار همان سطر legacy.
+- صراف: `SarrafSettlementService` هر سه مسیر — `CreatePostedAsync`، `EditPostedAsync`
+  (اول Reversal نسخهٔ قبلی، بعد نسخهٔ بعدی) و `CancelAsync`.
+- سه‌جانبه: `ThreeWaySettlementController` — `Confirm` و `Cancel`.
+
+همه داخل تراکنش‌های موجود، همه به‌صورت پارامترِ اختیاریِ nullable، پس مسیر legacy بدون Adapter
+مو‌به‌مو مثل قبل کار می‌کند.
+
+### نسخه‌بندی صراف
+`SourceEventId` = `SarrafSettlement:{id}:Created:{revision}`. ویرایش = برگرداندنِ **همهٔ**
+نسخه‌های پست‌شده + پست نسخهٔ بعدی. سند قبلی Posted و دست‌نخورده می‌ماند (تست‌شده: اثر خالص =
+مبلغ جدید؛ لغو = اثر خالص صفر).
+
+### ⚠️ اختلاف مورد انتظار با legacy — قبل از روشن‌کردن Flag روی داده‌ی واقعی بررسی شود
+سود/زیانِ سندِ صراف با سطر `SarrafSettlementExchangeDifference` لگسی **یکی نیست و نباید باشد**:
+- سند: `SarrafCharged − مبلغ طرف‌حساب`
+- legacy: `Requested − SupplierAccepted`
+
+این دو شکاف متفاوتی را می‌سنجند. legacy سطر اختلاف را فقط زیر `RecognizeExchangeGainLoss`
+می‌نویسد، ولی سند متوازن **همیشه** باید تکلیف شکاف را روشن کند. لاگ هر دو عدد را کنار هم
+چاپ می‌کند تا واگرایی per-settlement دیده شود.
+
+### ⚠️ محدودیت‌های شناخته‌شده (عمدی، مستند)
+- **کسری Reversal ندارد** — چون legacy هم ندارد. `InventoryTransportLegsController.CancelGroupTransfer`
+  مصارف کرایه و سطرهای دفترشان را پاک می‌کند ولی سطر `ShortageCharge` را **دست‌نخورده**
+  می‌گذارد؛ هیچ مسیر دیگری هم آن را حذف نمی‌کند. نقطه‌ای برای اتصال Reversal وجود ندارد.
+  اگر روزی آن سطر مسیر لغو پیدا کرد، **قبل از روشن‌کردن Flag** باید Reversal اضافه شود.
+- **`ThreeWaySettlement` با `PayeeType=Supplier` پست نمی‌شود** (`UNSUPPORTED_PAYEE_TYPE`) —
+  دامنهٔ تأییدشده فقط صراف بود. Mapping دقیقاً همان است و فقط یک شرط باید باز شود.
+- **`LossEventsController.Edit` مقدار ضایعات را عوض می‌کند ولی `InventoryMovement` را نه.**
+  چون سند از روی Movement ارزش‌گذاری می‌کند، ویرایش سند را بی‌اعتبار نمی‌کند. این ناسازگاری
+  در خود legacy است و در دامنهٔ این مرحله نبود.
+
+---
+
 ## نقطه‌ی دقیق توقف
 
-آخرین کار انجام‌شده: **همهٔ بدهی‌های مراحل ۵ و ۶ بسته شد** — هر ۹ مسیر ساخت مصرف وصل شد،
-Reversal لغو مصرف وصل شد، Reversal خرید/رسید ساخته و تست شد. Build سبز (۰ خطا)،
-۱۱ تست Reversal سبز، Full Suite = ۱۰۳۳ پاس + همان ۱۸ شکست قدیمی + **۰ شکست جدید**.
-COGS عمداً به مرحله ۷ موکول شد (چون به فروش گره خورده است).
+آخرین کار انجام‌شده: **مرحله ۸ کامل شد** — ضایعات، کسری، تسویهٔ صراف و تسویهٔ سه‌جانبه، همراه
+با Reversal و Idempotency. Build سبز (۰ خطا). **۳۲ تست مرحله ۸ سبز در اولین اجرا.**
+
+**وضعیت تأیید تست:**
+- مرحله ۸ + همهٔ تست‌های Accounting و نواحی دست‌خورده: **۲۵۳ پاس / ۱ شکست**، و آن یک شکست
+  `SuppliersControllerTests.Details_SarrafSettlement_FallsBack_To_LoadingRubRate_When_Ledger_Has_No_Exact_Rub`
+  است — **سطر سوم همان لیست baseline ۱۸تایی، شکست قدیمی**. یعنی **۰ شکست جدید**.
+- مرحله ۷: ۱۷ تست سبز. ⚠️ **Full Suite کامل بعد از مرحله ۷ و ۸ اجرا نشد** (کاربر اجرا را
+  متوقف کرد). آخرین Full Suite کامل مربوط به پایان مرحله ۶ است: ۱۰۳۳ پاس + ۱۸ شکست قدیمی.
+  قبل از Cutover باید یک بار کامل گرفته شود.
 
 سه Migration اجرانشده روی دیتابیس عملیاتی باقی است:
 `20260715181837_AddCompanyOwnershipToPaymentsAndCashAccounts` (مرحله ۳)،
-`20260716092121_AddCustomerAdvanceMarkerToPayments` (مرحله ۴) و
-`20260716095651_AddExpenseTypePayableAccountKind` (مرحله ۵).
+`20260716092121_AddCustomerAdvanceMarkerToPayments` (مرحله ۴)،
+`20260716095651_AddExpenseTypePayableAccountKind` (مرحله ۵) و
+`20260716114201_AddInventoryAverageCost` (مرحله ۷).
+مرحله ۸ هیچ Migration جدیدی نساخت.
+
+### جایی که باید ادامه داد → مرحله ۹ (Cutover و AccountingReadiness)
+مراحل ۴ تا ۸ همهٔ رویدادهای عملیاتی را پوشش داده‌اند. قبل از هر Cutover، این سه بدهیِ باز
+باید بسته شوند (هر سه در بخش‌های بالا مستندند):
+1. **انتقال بین ترمینال‌ها بها را منتقل نمی‌کند** → مانع روشن‌کردن Flag `Cogs`.
+2. **اختلاف مبلغ روبلی مرحله ۶** → باید روی داده‌ی واقعی بررسی شود.
+3. **واگرایی سود/زیان صراف با legacy** → باید روی داده‌ی واقعی بررسی شود.
 
 هیچ Backfill حدسی انجام نشده. هیچ داده‌ی عملیاتی حذف نشده. تغییرات UI نامرتبط در Working Tree
 (stat-cards `.webp`/`.css`، `docs/ui-references/*.png`) **دست‌نخورده** باقی مانده.
@@ -465,23 +579,28 @@ COGS عمداً به مرحله ۷ موکول شد (چون به فروش گره 
 
 ## از کجا ادامه بدهم؟
 
-### بدهی باقی‌مانده (فقط یکی)
-بررسی اختلاف مبلغ روبلی مرحله ۶ روی داده‌ی واقعی، قبل از روشن‌کردن Flag `Purchase`.
+### بدهی‌های باز (سه تا — هر سه مانع روشن‌کردن Flag)
+1. **انتقال بین ترمینال‌ها بها را منتقل نمی‌کند** → مانع Flag `Cogs`. کد لازم است، نه بررسی.
+2. **اختلاف مبلغ روبلی مرحله ۶** → مانع Flag `Purchase`. بررسی روی داده‌ی واقعی.
+3. **واگرایی سود/زیان صراف با legacy** → مانع Flag `SarrafSettlement`. بررسی روی داده‌ی واقعی.
 
-### مرحله ۷ — فروش و COGS
-1. Mapping پایه (از پرامپت اصلی):
-   ```
-   فروش : Dr Accounts Receivable   Cr Sales Revenue
-   COGS : Dr Cost of Goods Sold    Cr Inventory
-   ```
-2. **قبل از کد، منبع قطعیِ بهای تمام‌شدهٔ هر فروش را از کد legacy استخراج کن — حدس ممنوع.**
-   به‌ویژه: `SalesTransaction` (که `CompanyId` آن **nullable** است — گزارش مرحله ۲ را ببین)،
-   `InventoryMovement` سمت Out، `LoadingReceiptAllocation`، و مسیر فروش مستقیم
-   (`InventoryTransportReceiptService.BuildDirectSaleLedgerEntry`).
-3. روش ارزش‌گذاری موجودی (میانگین موزون؟ FIFO؟ Lineage؟) **باید پرسیده شود** — مرحله ۶ فقط
-   بهای هر بارگیری را در `1300` گذاشت و هیچ روش خروجی تعریف نکرد. `InventoryLineage`
-   (پشت Flag `Lineage.*`) ممکن است منبع قطعی باشد.
-4. هر زیرماژول: Build + Test مستقل. اگر تصمیم حسابداری مبهم شد، **توقف و سؤال دقیق**.
+همچنین یک Full Suite کامل باید گرفته شود (بعد از مراحل ۷ و ۸ فقط تست‌های هدفمند اجرا شده‌اند).
+
+### مرحله ۹ — Cutover و AccountingReadiness
+1. **قبل از هر کاری، سه بدهی بالا بسته شوند.** Flagها بدون آن‌ها روشن نمی‌شوند.
+2. سه Migration اجرانشده باید با تصمیم صریح کاربر روی دیتابیس عملیاتی اجرا شوند
+   (فهرست در «نقطه‌ی دقیق توقف»). **هرگز خودکار اجرا نشوند.**
+3. `AccountingReadiness` باید بگوید هر شرکت آمادهٔ Cutover هست یا نه: تنظیمات کامل،
+   حساب‌های فعال، دورهٔ مالی باز، و مهم‌تر از همه **مقایسهٔ دفتر کل جدید با legacy** روی همان
+   بازه. لاگ‌های `... pilot comparison` هر Adapter دقیقاً برای همین نوشته شده‌اند.
+4. اگر تصمیم حسابداری مبهم شد، **توقف و سؤال دقیق**.
+
+### مرحله ۱۳ — تسعیر پایان‌دوره (تصمیمِ ثبت‌شدهٔ مرحله ۸)
+هیچ مسیر legacy وجود ندارد: نه Entity، نه سرویس، نه Migration، و `4200`/`5300` هرگز پست
+نشده‌اند. زیرساختِ موجود: `AccountingSettings.ExchangeGain/LossAccountId`، `FiscalCalendarService`،
+`PeriodGuard`، و فیلدهای ارزیِ هر سطر (`LedgerEntry.Currency`, `.SourceAmount`,
+`.AppliedFxRateToUsd`, ...) به‌عنوان مبنای تسعیر. **رفتار کاملاً جدید است، نه mirror** — پس
+Mapping و مبنای نرخ باید پرسیده شود.
 
 ### الگوی موجود برای کپی‌برداری (مرجع دست‌اول)
 `PaymentAccountingAdapter` (مراحل ۴ و ۵) کامل‌ترین قالب است: تشخیص نوع رویداد از ماهیت واقعی،

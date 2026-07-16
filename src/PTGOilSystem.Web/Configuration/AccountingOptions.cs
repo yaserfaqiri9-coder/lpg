@@ -39,4 +39,13 @@ public sealed class AccountingPilotOptions
     // inventory. Cogs depends on InventoryReceipt having filled the valuation pool.
     public bool Sale { get; set; }
     public bool Cogs { get; set; }
+
+    // Stage 8 — losses, shortage, sarraf. InventoryLoss writes off stock the tanks lost and,
+    // like Cogs, depends on InventoryReceipt having filled the valuation pool. ShortageCharge
+    // recognises what a carrier owes for what did not arrive. The two sarraf flags cover the
+    // settlement flows that the Stage 4 SarrafPayment flag does not reach.
+    public bool InventoryLoss { get; set; }
+    public bool ShortageCharge { get; set; }
+    public bool SarrafSettlement { get; set; }
+    public bool ThreeWaySettlement { get; set; }
 }

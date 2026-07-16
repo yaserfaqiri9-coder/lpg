@@ -22,9 +22,15 @@ public class ThreeWaySettlementController : Controller
 
     private readonly ApplicationDbContext _db;
 
-    public ThreeWaySettlementController(ApplicationDbContext db)
+    // مرحلهٔ ۸ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe.
+    private readonly Services.Accounting.IThreeWaySettlementAccountingAdapter? _settlementAccounting;
+
+    public ThreeWaySettlementController(
+        ApplicationDbContext db,
+        Services.Accounting.IThreeWaySettlementAccountingAdapter? settlementAccounting = null)
     {
         _db = db;
+        _settlementAccounting = settlementAccounting;
     }
 
     [HttpGet]
@@ -147,6 +153,11 @@ public class ThreeWaySettlementController : Controller
         settlement.SupplierLedgerEntryId = supplierLedger.Id;
         await _db.SaveChangesAsync();
 
+        if (_settlementAccounting is not null)
+        {
+            await _settlementAccounting.TryPostSettlementAsync(settlement);
+        }
+
         if (transaction is not null)
         {
             await transaction.CommitAsync();
@@ -213,6 +224,11 @@ public class ThreeWaySettlementController : Controller
         settlement.CancellationReason = cleanReason;
 
         await _db.SaveChangesAsync();
+
+        if (_settlementAccounting is not null)
+        {
+            await _settlementAccounting.TryPostSettlementReversalAsync(settlement);
+        }
 
         if (transaction is not null)
         {
