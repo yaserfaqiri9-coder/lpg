@@ -48,4 +48,11 @@ public sealed class AccountingPilotOptions
     public bool ShortageCharge { get; set; }
     public bool SarrafSettlement { get; set; }
     public bool ThreeWaySettlement { get; set; }
+
+    // Inter-terminal transfers. Goods at different terminals cost different amounts to have got
+    // there, so the valuation pool is keyed by terminal — which means a transfer has to carry its
+    // cost from one pool to the other, or the sale at the destination values against the wrong
+    // stock. Without this flag a transfer moves tonnes and no money, and Cogs at the destination
+    // is unsafe; that is why enabling Cogs depends on enabling this.
+    public bool InventoryTransfer { get; set; }
 }

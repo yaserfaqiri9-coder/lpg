@@ -80,6 +80,7 @@ builder.Services.AddScoped<IInventoryLossAccountingAdapter, InventoryLossAccount
 builder.Services.AddScoped<IShortageChargeAccountingAdapter, ShortageChargeAccountingAdapter>();
 builder.Services.AddScoped<ISarrafSettlementAccountingAdapter, SarrafSettlementAccountingAdapter>();
 builder.Services.AddScoped<IThreeWaySettlementAccountingAdapter, ThreeWaySettlementAccountingAdapter>();
+builder.Services.AddScoped<IInventoryTransferAccountingAdapter, InventoryTransferAccountingAdapter>();
 // ---- Inventory Lineage (Phase 2). Feature flags + parallel reference-layer services. ----
 builder.Services.Configure<PTGOilSystem.Web.Configuration.LineageOptions>(
     builder.Configuration.GetSection(PTGOilSystem.Web.Configuration.LineageOptions.SectionName));

@@ -24,13 +24,21 @@ public sealed class InventoryTransportLegLoadService
     private readonly IStockService _stock;
     private readonly IInventoryLineageWriter _lineage;
 
+    // Dual-write اختیاری به دفتر کل جدید — انتقال بهای موجودی به حساب «کالای در راه». پشت Feature Flag و null-safe.
+    private readonly Accounting.IInventoryTransferAccountingAdapter? _transferAccounting;
+
     // writer اختیاری است تا تمام call siteهای موجود (که سرویس را دستی new می‌کنند) بدون تغییر بمانند؛
     // اگر تزریق نشود، یک writerِ خاموش (WriteLots=false) ساخته می‌شود و رفتار دقیقاً مثل قبل است.
-    public InventoryTransportLegLoadService(ApplicationDbContext db, IStockService stock, IInventoryLineageWriter? lineage = null)
+    public InventoryTransportLegLoadService(
+        ApplicationDbContext db,
+        IStockService stock,
+        IInventoryLineageWriter? lineage = null,
+        Accounting.IInventoryTransferAccountingAdapter? transferAccounting = null)
     {
         _db = db;
         _stock = stock;
         _lineage = lineage ?? InventoryLineageWriterFactory.Disabled(db);
+        _transferAccounting = transferAccounting;
     }
 
     /// <summary>
@@ -53,6 +61,12 @@ public sealed class InventoryTransportLegLoadService
         leg.Status = InventoryTransportLegStatus.Loaded;
         leg.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync();
+
+        // Dual-write داخل همان تراکنشِ caller: بهای بار از حوضچهٔ ترمینال مبدأ به «کالای در راه» می‌رود.
+        if (_transferAccounting is not null)
+        {
+            await _transferAccounting.TryPostLegLoadAsync(leg);
+        }
 
         // لایهٔ Lineage (پشت flag Lineage:WriteLots؛ با flag خاموش no-op). موجودی فیزیکی را تغییر نمی‌دهد.
         await _lineage.OnLegLoadedAsync(leg, movement);

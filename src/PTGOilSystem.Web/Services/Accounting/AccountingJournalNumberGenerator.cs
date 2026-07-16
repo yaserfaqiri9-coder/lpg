@@ -22,6 +22,9 @@ public interface IAccountingJournalNumberGenerator
     string ForSarrafSettlementReversal(int companyId, int settlementId, int revision);
     string ForThreeWaySettlement(int companyId, int settlementId);
     string ForThreeWaySettlementReversal(int companyId, int settlementId);
+    string ForTransportLegLoad(int companyId, int transportLegId);
+    string ForTransportLegLoadReversal(int companyId, int transportLegId);
+    string ForTransportReceipt(int companyId, int transportReceiptId);
 }
 
 public sealed class AccountingJournalNumberGenerator : IAccountingJournalNumberGenerator
@@ -170,6 +173,18 @@ public sealed class AccountingJournalNumberGenerator : IAccountingJournalNumberG
 
     public string ForThreeWaySettlementReversal(int companyId, int settlementId)
         => $"TWSR-{ValidateKey(companyId, settlementId, nameof(settlementId))}";
+
+    // A transfer is two events with time between them: the leg load takes the goods out of the
+    // source terminal, and each receipt lands part of them at the destination. Both carry their
+    // own number because both are genuine, separately dated journals.
+    public string ForTransportLegLoad(int companyId, int transportLegId)
+        => $"TRL-{ValidateKey(companyId, transportLegId, nameof(transportLegId))}";
+
+    public string ForTransportLegLoadReversal(int companyId, int transportLegId)
+        => $"TRLR-{ValidateKey(companyId, transportLegId, nameof(transportLegId))}";
+
+    public string ForTransportReceipt(int companyId, int transportReceiptId)
+        => $"TRR-{ValidateKey(companyId, transportReceiptId, nameof(transportReceiptId))}";
 
     private static string ValidateKey(int companyId, int entityId, string entityIdName)
     {

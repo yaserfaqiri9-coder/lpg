@@ -23,6 +23,9 @@ public class ShipmentsController : Controller
     private readonly IStockService _stock;
     private readonly InventoryTransportLegLoadService _legLoad;
 
+    // Dual-write اختیاری به دفتر کل جدید — برگشتِ بارگیری «کالای در راه» را برمی‌گرداند. پشت Feature Flag و null-safe.
+    private readonly Services.Accounting.IInventoryTransferAccountingAdapter? _transferAccounting;
+
     public ShipmentsController(ApplicationDbContext db)
         : this(db, new StockService(db), new InventoryTransportLegLoadService(db, new StockService(db)))
     {
@@ -32,11 +35,13 @@ public class ShipmentsController : Controller
     public ShipmentsController(
         ApplicationDbContext db,
         IStockService stock,
-        InventoryTransportLegLoadService legLoad)
+        InventoryTransportLegLoadService legLoad,
+        Services.Accounting.IInventoryTransferAccountingAdapter? transferAccounting = null)
     {
         _db = db;
         _stock = stock;
         _legLoad = legLoad;
+        _transferAccounting = transferAccounting;
     }
 
     public IActionResult Index()
@@ -460,6 +465,16 @@ public class ShipmentsController : Controller
             .Where(l => l.OutboundInventoryMovementId.HasValue)
             .Select(l => l.OutboundInventoryMovementId!.Value)
             .ToList();
+
+        // Dual-write داخل همان تراکنش: بهای «کالای در راه» به حوضچهٔ ترمینال مبدأ برمی‌گردد.
+        // باید پیش از حذف legها انجام شود، چون آداپتر مقدار و ترمینال مبدأ را از خودِ leg می‌خواند.
+        if (_transferAccounting is not null)
+        {
+            foreach (var leg in legs.Where(l => l.OutboundInventoryMovementId.HasValue))
+            {
+                await _transferAccounting.TryPostLegLoadReversalAsync(leg);
+            }
+        }
 
         _db.InventoryTransportLegs.RemoveRange(legs);
         shipment.InventoryTransportLegs.Clear();

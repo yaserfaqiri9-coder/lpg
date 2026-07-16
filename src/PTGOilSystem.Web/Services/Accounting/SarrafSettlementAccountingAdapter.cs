@@ -144,7 +144,7 @@ public sealed class SarrafSettlementAccountingAdapter(
         var gapUsd = decimal.Round(sarrafAmountUsd - counterpartyAmountUsd, 4, MidpointRounding.AwayFromZero);
         if (gapUsd != 0m)
         {
-            var isLoss = reducesCounterparty ? gapUsd > 0m : gapUsd < 0m;
+            var isLoss = JournalGapIsLoss(settlement, gapUsd);
             var gapAmount = Math.Abs(gapUsd);
             lines.Add(new AccountingPostLine(
                 isLoss ? settings.ExchangeLossAccountId : settings.ExchangeGainAccountId,
@@ -174,7 +174,7 @@ public sealed class SarrafSettlementAccountingAdapter(
         {
             var journal = await postingService.PostAsync(request, cancellationToken);
             LogOutcome(settlement, companyId, journal.Lines.Sum(x => x.Debit),
-                PaymentPostingStatus.Posted, null);
+                PaymentPostingStatus.Posted, null, gapUsd);
             return new SarrafSettlementAccountingResult(PaymentPostingStatus.Posted, journal, null);
         }
         catch (Exception exception)
@@ -477,15 +477,25 @@ public sealed class SarrafSettlementAccountingAdapter(
         int companyId,
         decimal journalDebitTotal,
         PaymentPostingStatus status,
-        string? reason)
+        string? reason,
+        decimal? journalGapUsd = null)
     {
         // Legacy writes one counterparty row and, only under RecognizeExchangeGainLoss, a
         // difference row measured as Requested − SupplierAccepted. The journal instead balances
         // the counterparty amount against what the sarraf charged, so its gain or loss is a
-        // different figure by design. Both are printed so the gap can be checked against real
-        // data before the flag is enabled.
+        // different figure by design.
+        //
+        // The two figures that must be compared before the flag is enabled are LegacyDifferenceUsd
+        // and JournalGapUsd, so both are printed rather than left to be derived. JournalGapUsd is
+        // SarrafChargedAmountUsd − LegacyCounterpartyAmountUsd: positive means the sarraf charged
+        // more than the counterparty accepted. Which side of P&L that lands on also depends on the
+        // direction of the settlement, so JournalGapAccountKind names the account actually hit.
+        var gapAccountKind = journalGapUsd is null or 0m
+            ? "None"
+            : JournalGapIsLoss(settlement, journalGapUsd.Value) ? "ExchangeLoss" : "ExchangeGain";
+
         logger.LogInformation(
-            "Sarraf settlement accounting pilot comparison: SettlementId {SettlementId}, CompanyId {CompanyId}, SarrafId {SarrafId}, CounterpartyType {CounterpartyType}, Direction {Direction}, DifferenceTreatment {DifferenceTreatment}, LegacyCounterpartyAmountUsd {LegacyCounterpartyAmountUsd}, LegacyDifferenceUsd {LegacyDifferenceUsd}, SarrafChargedAmountUsd {SarrafChargedAmountUsd}, JournalDebitTotal {JournalDebitTotal}, PostingStatus {PostingStatus}, SkipOrFailureReason {SkipOrFailureReason}",
+            "Sarraf settlement accounting pilot comparison: SettlementId {SettlementId}, CompanyId {CompanyId}, SarrafId {SarrafId}, CounterpartyType {CounterpartyType}, Direction {Direction}, DifferenceTreatment {DifferenceTreatment}, LegacyCounterpartyAmountUsd {LegacyCounterpartyAmountUsd}, LegacyDifferenceUsd {LegacyDifferenceUsd}, SarrafChargedAmountUsd {SarrafChargedAmountUsd}, JournalGapUsd {JournalGapUsd}, JournalGapAccountKind {JournalGapAccountKind}, JournalDebitTotal {JournalDebitTotal}, PostingStatus {PostingStatus}, SkipOrFailureReason {SkipOrFailureReason}",
             settlement.Id,
             companyId,
             settlement.SarrafId,
@@ -495,9 +505,24 @@ public sealed class SarrafSettlementAccountingAdapter(
             SupplierLedgerAmountUsd(settlement),
             settlement.DifferenceAmountUsd,
             settlement.SarrafChargedAmountUsd,
+            journalGapUsd,
+            gapAccountKind,
             journalDebitTotal,
             status,
             reason);
+    }
+
+    /// <summary>
+    /// A gap is a loss when it makes us worse off, which depends on which way the money moved:
+    /// paying out more than the counterparty credited costs us, but collecting less than they
+    /// were debited costs us too.
+    /// </summary>
+    internal static bool JournalGapIsLoss(SarrafSettlement settlement, decimal gapUsd)
+    {
+        var reducesCounterparty = settlement.CounterpartyType == SarrafSettlementCounterpartyType.Customer
+            ? settlement.Direction == SarrafSettlementDirection.In
+            : settlement.Direction == SarrafSettlementDirection.Out;
+        return reducesCounterparty ? gapUsd > 0m : gapUsd < 0m;
     }
 
     private void LogFailure(SarrafSettlement settlement, Exception exception)

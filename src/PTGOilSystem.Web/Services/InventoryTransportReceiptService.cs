@@ -30,6 +30,7 @@ public sealed class InventoryTransportReceiptService
     private readonly Accounting.IExpenseAccountingAdapter? _expenseAccounting;
     private readonly Accounting.ISalesAccountingAdapter? _salesAccounting;
     private readonly Accounting.IShortageChargeAccountingAdapter? _shortageAccounting;
+    private readonly Accounting.IInventoryTransferAccountingAdapter? _transferAccounting;
 
     public InventoryTransportReceiptService(
         ApplicationDbContext db,
@@ -37,7 +38,8 @@ public sealed class InventoryTransportReceiptService
         IInventoryLineageWriter? lineage = null,
         Accounting.IExpenseAccountingAdapter? expenseAccounting = null,
         Accounting.ISalesAccountingAdapter? salesAccounting = null,
-        Accounting.IShortageChargeAccountingAdapter? shortageAccounting = null)
+        Accounting.IShortageChargeAccountingAdapter? shortageAccounting = null,
+        Accounting.IInventoryTransferAccountingAdapter? transferAccounting = null)
     {
         _db = db;
         _currencyConversion = currencyConversion;
@@ -45,6 +47,7 @@ public sealed class InventoryTransportReceiptService
         _expenseAccounting = expenseAccounting;
         _salesAccounting = salesAccounting;
         _shortageAccounting = shortageAccounting;
+        _transferAccounting = transferAccounting;
     }
 
     public async Task<InventoryTransportLeg?> LoadLegAsync(int id, bool tracking)
@@ -308,6 +311,14 @@ public sealed class InventoryTransportReceiptService
                 _db.TruckDispatches.Add(dispatch);
                 await _db.SaveChangesAsync();
             }
+        }
+
+        // Dual-write داخل همان Transaction قدیمی: سهمِ این رسید از بهای «کالای در راه» خارج و به حوضچهٔ
+        // ترمینال مقصد وارد می‌شود؛ بهای کسری هم همان‌جا به حساب ضایعات می‌رود. آداپتر خودش فقط مسیر
+        // ToInventory با دریافتِ مثبت را می‌پذیرد و بقیهٔ مقصدها را Skip می‌کند.
+        if (_transferAccounting is not null)
+        {
+            await _transferAccounting.TryPostReceiptAsync(receipt);
         }
 
         // فقط وقتی باقیمانده حمل صفر شد، حمل «تکمیل» می‌شود؛ در تخلیهٔ جزئی حمل باز می‌ماند تا باقیمانده هم رسید بگیرد.
