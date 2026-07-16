@@ -1,0 +1,113 @@
+@using PTGOilSystem.Web.Models.Accounting
+@using PTGOilSystem.Web.Services.Accounting
+@model ClosingChecklistPageViewModel
+@{
+    ViewData["Title"] = "چک‌لیست بستن سال";
+
+    static string StatusCss(ClosingCheckStatus s) => s switch
+    {
+        ClosingCheckStatus.Passed => "bg-success",
+        ClosingCheckStatus.Warning => "bg-warning text-dark",
+        ClosingCheckStatus.Blocked => "bg-danger",
+        _ => "bg-secondary"
+    };
+    static string StatusLabel(ClosingCheckStatus s) => s switch
+    {
+        ClosingCheckStatus.Passed => "قبول",
+        ClosingCheckStatus.Warning => "هشدار",
+        ClosingCheckStatus.Blocked => "مسدود",
+        _ => "غیرمرتبط"
+    };
+}
+
+<div class="ak-list-page">
+    <partial name="~/Views/Shared/Components/Ak/_AkPageHeader.cshtml"
+             model="@(("چک‌لیست بستن سال", false,
+                       (string?)null, (string?)null, (string?)null, (string?)null,
+                       (string?)null, (string?)null, (string?)null))" />
+
+    <form method="get" asp-action="Index" class="ak-form">
+        <div class="ak-field">
+            <label class="ak-label" for="companyId">شرکت</label>
+            <select class="form-select" id="companyId" name="companyId" onchange="this.form.submit()">
+                @foreach (var company in Model.Companies)
+                {
+                    <option value="@company.CompanyId" selected="@company.IsSelected">@company.Name</option>
+                }
+            </select>
+        </div>
+        <div class="ak-field">
+            <label class="ak-label" for="fiscalYearId">سال مالی</label>
+            <select class="form-select" id="fiscalYearId" name="fiscalYearId" onchange="this.form.submit()">
+                @foreach (var y in Model.Years)
+                {
+                    <option value="@y.FiscalYearId" selected="@y.IsSelected">@y.Name</option>
+                }
+            </select>
+        </div>
+    </form>
+
+    @if (Model.Report is null)
+    {
+        <div class="ak-empty"><i class="bi bi-list-check" aria-hidden="true"></i>برای این شرکت سال مالی‌ای برای بررسی وجود ندارد</div>
+    }
+    else
+    {
+        var r = Model.Report;
+        <div class="d-flex flex-wrap gap-2 align-items-center my-3">
+            <span class="badge @StatusCss(r.OverallStatus) fs-6">وضعیت کلی: @StatusLabel(r.OverallStatus)</span>
+            <span class="badge bg-danger">مسدود: @r.BlockedCount</span>
+            <span class="badge bg-warning text-dark">هشدار: @r.WarningCount</span>
+            <span class="badge bg-success">قبول: @r.PassedCount</span>
+            <span class="ms-auto"></span>
+            <a class="btn btn-sm btn-outline-secondary"
+               asp-action="Json" asp-route-companyId="@r.CompanyId" asp-route-fiscalYearId="@r.FiscalYearId">JSON</a>
+            <a class="btn btn-sm btn-outline-secondary"
+               asp-action="Csv" asp-route-companyId="@r.CompanyId" asp-route-fiscalYearId="@r.FiscalYearId">CSV</a>
+        </div>
+
+        <div class="ak-list">
+            <div class="ak-table-wrap">
+                <table class="ak-table" aria-label="چک‌لیست بستن سال">
+                    <thead>
+                        <tr>
+                            <th>وضعیت</th>
+                            <th>کد</th>
+                            <th class="ak-col-grow">کنترل</th>
+                            <th>تعداد</th>
+                            <th>اقدام لازم</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in r.Checks)
+                        {
+                            <tr>
+                                <td><span class="badge @StatusCss(c.Status)">@StatusLabel(c.Status)</span></td>
+                                <td><code>@c.Code</code></td>
+                                <td>
+                                    <div><strong>@c.Title</strong></div>
+                                    <div class="text-muted small">@c.Description</div>
+                                    @if (c.SampleRecords.Count > 0)
+                                    {
+                                        <ul class="small text-muted mb-0">
+                                            @foreach (var s in c.SampleRecords)
+                                            {
+                                                <li>@s</li>
+                                            }
+                                        </ul>
+                                    }
+                                    @if (!string.IsNullOrEmpty(c.FeatureFlag))
+                                    {
+                                        <div class="small"><span class="badge bg-light text-dark">@c.FeatureFlag</span></div>
+                                    }
+                                </td>
+                                <td>@c.RecordCount</td>
+                                <td class="small">@c.RequiredAction</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>

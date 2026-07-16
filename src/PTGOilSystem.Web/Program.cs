@@ -74,6 +74,8 @@ builder.Services.AddScoped<IAccountingReadinessService, AccountingReadinessServi
 // مرحله ۱۰ — صفحه‌های سال مالی. Overview فقط می‌خواند؛ Provisioning تنها مسیر نوشتنِ آن است.
 builder.Services.AddScoped<IFiscalYearOverviewService, FiscalYearOverviewService>();
 builder.Services.AddScoped<IFiscalYearProvisioningService, FiscalYearProvisioningService>();
+// مرحله ۱۲ — چک‌لیستِ بستنِ سال. کاملاً فقط‌خواندنی؛ هیچ Close/Lock/Migration/Posting ندارد.
+builder.Services.AddScoped<IClosingChecklistService, ClosingChecklistService>();
 // مرحله ۱۱ — تنها مسیر نوشتنِ وضعیت قفلِ دوره. قفل سخت از اینجا هم برگشت‌ناپذیر است.
 builder.Services.AddScoped<IFiscalPeriodLockService, FiscalPeriodLockService>();
 builder.Services.AddScoped<IPaymentCompanyResolver, PaymentCompanyResolver>();

@@ -23,7 +23,7 @@
 | ۹ | Cutover و AccountingReadiness | ✅ کامل |
 | ۱۰ | UI ساده‌ی سال مالی | ✅ کامل |
 | ۱۱ | قفل دوره و AccountingDate | ✅ کامل |
-| ۱۲ | چک‌لیست بستن سال | ⛔ شروع‌نشده |
+| ۱۲ | چک‌لیست بستن سال | ✅ کامل (فقط‌خواندنی + Export JSON/CSV) |
 | ۱۳ | Trial Close (+ تسعیر پایان‌دوره) | ⛔ شروع‌نشده |
 | ۱۴ | Final Close | ⛔ شروع‌نشده |
 | ۱۵ | بازگشایی کنترل‌شده | ⛔ شروع‌نشده |
@@ -979,6 +979,43 @@ Mapping و مبنای نرخ باید پرسیده شود.
 Flag مستقل هر زیرماژول، تعیین شرکتِ قابل‌اثبات، Skip بدون اثر روی legacy، Duplicate، بازتولید
 مبلغ Functional از جفت‌ارز، و تست PostgreSQL واقعی از طریق `AccountingPostgreSqlFixture`.
 `ExpenseAccountingAdapter` نمونه‌ی خوبِ «فیلد صریح به‌جای استنتاج از داده‌ی آزاد» است.
+
+---
+
+## مرحله ۱۲ — چک‌لیستِ بستنِ سال ✅
+
+سرویس و صفحهٔ **کاملاً فقط‌خواندنی** برای هر (Company, FiscalYear) مستقل. اجرای چک‌لیست هیچ
+Entity/Journal/Flag/Migration/Posting را تغییر نمی‌دهد (تست‌شده: `Report_Writes_Nothing`).
+
+### فایل‌های جدید
+- `Services/Accounting/ClosingChecklistModels.cs` — `ClosingCheckStatus`
+  (Passed/Warning/Blocked/NotApplicable)، `ClosingCheckResult`، `ClosingRevenueExpenseSummary`،
+  `ClosingChecklistReport`.
+- `Services/Accounting/ClosingChecklistService.cs` — سرویس فقط‌خواندنی.
+- `Controllers/ClosingChecklistController.cs` — فقط GET: `Index`, `Json`, `Csv` (بدون Package جدید).
+- `Models/Accounting/ClosingChecklistPageViewModel.cs`
+- `Views/ClosingChecklist/Index.cshtml` — با کامپوننت‌های مشترک AK.
+- `tests/PTGOilSystem.Web.Tests/ClosingChecklistServiceTests.cs` (۱۷ تست، همه سبز).
+
+### فایل‌های تغییرکرده
+- `Program.cs` — ثبت DI: `IClosingChecklistService`.
+- `docs/accounting/DUAL_ENTRY_PROGRESS.md`.
+
+### کنترل‌های پیاده‌شده (خروجی هرکدام: Code/Status/Title/Description/CompanyId/FiscalYearId/
+RecordCount/SampleRecords≤۱۰/RequiredAction/FeatureFlag/Link)
+تنظیمات معتبر، ۲۰ حساب اجباری موجود/فعال/هم‌شرکت، سال معتبر و بدون هم‌پوشانی، پوشش کامل دوره‌ها
+بدون فاصله/هم‌پوشانی، سند نامتوازن، وضعیت‌های ناسازگارِ سند (Draft/Posted بدون PostedAt/Line،
+Draft با PostedAt)، SourceEventId تکراری، فروش بدون COGS/PendingCost، موجودی منفی، Pool ناسازگار،
+انتقال ترمینالی ناقص، ماندهٔ ۱۳۱۰ (Warning عملیاتی)، ExpenseType بدون PayableKind، CashAccount/
+Payment بدون Company، IsCustomerAdvance نامشخص، وضعیت همهٔ Feature Flagها، Migrationهای اجرانشده،
+AccountingReadiness Blocked، دوره‌های باز، برابری Debit/Credit کل سال، مانده درآمد/هزینه برای
+Final Close، تسعیر پایان دوره Pending (Warning تا مرحله ۱۳)، Full Suite و شمارش Skip فقط شواهد
+بیرونی (NotApplicable — Runtime جعل نمی‌شود).
+
+### دسترسی و ایمنی
+`[Authorize(ManageData)]`، فقط GET، بدون هیچ مسیر نوشتنی. Export JSON و CSV ساده و بدون Package
+جدید (نقل‌قول‌گذاری استاندارد CSV + BOM). Company isolation تست‌شده (سند نامتوازنِ شرکت دیگر نشت
+نمی‌کند؛ سالِ شرکت دیگر با شناسهٔ این شرکت null می‌شود). Idempotency تست‌شده.
 
 ---
 
