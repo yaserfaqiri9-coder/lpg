@@ -73,6 +73,7 @@ builder.Services.AddScoped<IPaymentCompanyResolver, PaymentCompanyResolver>();
 builder.Services.AddScoped<IExpenseAccountingAdapter, ExpenseAccountingAdapter>();
 builder.Services.AddScoped<IPaymentAccountingAdapter, PaymentAccountingAdapter>();
 builder.Services.AddScoped<IViaSarrafAccountingAdapter, ViaSarrafAccountingAdapter>();
+builder.Services.AddScoped<IPurchaseAccountingAdapter, PurchaseAccountingAdapter>();
 // ---- Inventory Lineage (Phase 2). Feature flags + parallel reference-layer services. ----
 builder.Services.Configure<PTGOilSystem.Web.Configuration.LineageOptions>(
     builder.Configuration.GetSection(PTGOilSystem.Web.Configuration.LineageOptions.SectionName));

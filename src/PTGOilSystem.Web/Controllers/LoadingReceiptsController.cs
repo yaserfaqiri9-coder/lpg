@@ -43,14 +43,18 @@ public class LoadingReceiptsController : Controller
     private readonly ILossEventWorkflowService _lossWorkflow;
     private readonly ICurrencyConversionService _currencyConversion;
     private readonly ILogger<LoadingReceiptsController> _logger;
+    // مرحله ۶ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe.
+    private readonly Services.Accounting.IPurchaseAccountingAdapter? _purchaseAccounting;
 
     public LoadingReceiptsController(
         ApplicationDbContext db,
         IAuditService audit,
         ILogger<LoadingReceiptsController> logger,
         ILossEventWorkflowService? lossWorkflow = null,
-        ICurrencyConversionService? currencyConversion = null)
+        ICurrencyConversionService? currencyConversion = null,
+        Services.Accounting.IPurchaseAccountingAdapter? purchaseAccounting = null)
     {
+        _purchaseAccounting = purchaseAccounting;
         _db = db;
         _audit = audit;
         _lossWorkflow = lossWorkflow ?? new LossEventWorkflowService(db, new StockService(db), audit);
@@ -1746,6 +1750,13 @@ public class LoadingReceiptsController : Controller
                     .ToList();
                 _db.LedgerEntries.AddRange(directSaleLedgerEntries);
                 await _db.SaveChangesAsync();
+
+                // مرحله ۶ — Dual-write داخل همان Transaction قدیمی: کالای رسیده از «در راه»
+                // به موجودی منتقل می‌شود. Adapter خودش پست‌نشدنِ خریدِ متناظر را Skip می‌کند.
+                if (_purchaseAccounting is not null)
+                {
+                    await _purchaseAccounting.TryPostInventoryReceiptAsync(receipt);
+                }
 
                 foreach (var allocation in allocations)
                 {

@@ -22,18 +22,22 @@ public class ContractsController : Controller
     private readonly IAuditService _audit;
     private readonly ICurrencyConversionService _currencyConversion;
     private readonly IFormTokenGuard _formTokens;
+    // مرحله ۶ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe.
+    private readonly Services.Accounting.IPurchaseAccountingAdapter? _purchaseAccounting;
 
     [ActivatorUtilitiesConstructor]
     public ContractsController(
         ApplicationDbContext db,
         IAuditService audit,
         ICurrencyConversionService currencyConversion,
-        IFormTokenGuard formTokens)
+        IFormTokenGuard formTokens,
+        Services.Accounting.IPurchaseAccountingAdapter? purchaseAccounting = null)
     {
         _db = db;
         _audit = audit;
         _currencyConversion = currencyConversion;
         _formTokens = formTokens;
+        _purchaseAccounting = purchaseAccounting;
     }
 
     public ContractsController(ApplicationDbContext db, IAuditService audit)
@@ -577,6 +581,7 @@ public class ContractsController : Controller
 
         var syncedLoadingCount = await SyncPurchaseLoadingPricesAsync(existing, repriceFinalized: contractPriceChanged);
         await _db.SaveChangesAsync();
+        await PostRepricedPurchasesAsync(existing.Id);
         await _audit.LogAndSaveAsync(nameof(Contract), existing.Id, AuditAction.Update, diff: diff);
         TempData["ok"] = syncedLoadingCount > 0
             ? $"تغییرات قرارداد اعمال شد و قیمت خرید {syncedLoadingCount:N0} بارگیری هماهنگ شد."
@@ -789,6 +794,7 @@ public class ContractsController : Controller
 
         var syncedLoadingCount = await SyncPurchaseLoadingPricesAsync(contract, repriceFinalized: contractPriceChanged);
         await _db.SaveChangesAsync();
+        await PostRepricedPurchasesAsync(contract.Id);
 
         var diff = AuditDiffFormatter.ForUpdate(
             ("PricingMethod", prevPricingMethod, contract.PricingMethod),
@@ -837,6 +843,7 @@ public class ContractsController : Controller
 
         var repricedCount = await SyncPurchaseLoadingPricesAsync(contract, repriceFinalized: true);
         await _db.SaveChangesAsync();
+        await PostRepricedPurchasesAsync(contract.Id);
 
         var diff = AuditDiffFormatter.ForUpdate(("RepricedLoadingCount", 0, repricedCount));
         await _audit.LogAndSaveAsync(nameof(Contract), contract.Id, AuditAction.Update, diff: diff);
@@ -856,6 +863,26 @@ public class ContractsController : Controller
     // قاعدهٔ #9: به‌صورت پیش‌فرض فقط بارگیری‌های «در انتظار قیمت» (بدون قیمت معتبر) قطعی می‌شوند؛
     // بارگیری‌های از پیش قطعی‌شده با ویرایش دوبارهٔ نرخ قرارداد تغییر نمی‌کنند مگر repriceFinalized=true
     // (مسیر صریحِ «اصلاح قیمت» — که جداگانه محافظت/لاگ می‌شود).
+    // مرحله ۶ — بعد از هر بازقیمت‌گذاری، خریدِ هر بارگیری دوباره به Adapter داده می‌شود.
+    // Adapter خودش تشخیص می‌دهد: مبلغ عوض نشده → Duplicate (بی‌اثر)، عوض شده → Reversal سند
+    // قبلی و پست نسخهٔ جدید، قیمت‌نداشتن → Skip. پس فراخوانی برای همهٔ بارگیری‌ها امن است.
+    private async Task PostRepricedPurchasesAsync(int contractId)
+    {
+        if (_purchaseAccounting is null)
+        {
+            return;
+        }
+
+        var loadings = await _db.LoadingRegisters
+            .AsNoTracking()
+            .Where(l => l.ContractId == contractId)
+            .ToListAsync();
+        foreach (var loading in loadings)
+        {
+            await _purchaseAccounting.TryPostPurchaseAsync(loading);
+        }
+    }
+
     private async Task<int> SyncPurchaseLoadingPricesAsync(Contract contract, bool repriceFinalized = false)
     {
         if (contract.ContractType != ContractType.Purchase)

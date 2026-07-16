@@ -627,6 +627,20 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
         var driver = new Driver { FullName = Unique("Driver"), IsActive = true };
         db.Drivers.Add(driver);
 
+        var terminal = new Terminal { Code = Unique("T"), Name = Unique("Terminal"), IsActive = true };
+        db.Terminals.Add(terminal);
+        await db.SaveChangesAsync();
+
+        var tank = new StorageTank
+        {
+            TerminalId = terminal.Id,
+            TankCode = Unique("TK"),
+            DisplayName = Unique("Tank"),
+            CapacityMt = 1_000m,
+            IsActive = true
+        };
+        db.StorageTanks.Add(tank);
+
         var cashAccount = new CashAccount
         {
             Code = Unique("CA"),
@@ -666,7 +680,7 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
 
         return new PaymentScope(
             company, supplier, customer, sarraf, serviceProvider, driver,
-            product, contract, cashAccount, period, settings);
+            product, contract, cashAccount, terminal, tank, period, settings);
     }
 
     internal static string Unique(string prefix)
@@ -682,6 +696,8 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
         Product Product,
         Contract Contract,
         CashAccount CashAccount,
+        Terminal Terminal,
+        StorageTank Tank,
         FiscalPeriod Period,
         AccountingSettings Settings);
 }

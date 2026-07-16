@@ -26,6 +26,8 @@ public class LoadingController : Controller
     private readonly IPricingService _pricing;
     private readonly ILossEventWorkflowService _lossWorkflow;
     private readonly IMemoryCache? _cache;
+    // مرحله ۶ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe.
+    private readonly Services.Accounting.IPurchaseAccountingAdapter? _purchaseAccounting;
     private const int DefaultListLimit = 100;
     private const int LookupLimit = 200;
     private const int ReceiptAllocationEditorRows = 4;
@@ -53,8 +55,10 @@ public class LoadingController : Controller
         ILogger<LoadingController> logger,
         ILossEventWorkflowService? lossWorkflow = null,
         IPricingService? pricing = null,
-        IMemoryCache? cache = null)
+        IMemoryCache? cache = null,
+        Services.Accounting.IPurchaseAccountingAdapter? purchaseAccounting = null)
     {
+        _purchaseAccounting = purchaseAccounting;
         _db = db;
         _audit = audit;
         _logger = logger;
@@ -443,6 +447,14 @@ public class LoadingController : Controller
 
     private async Task PostSupplierLoadingLedgerIfReadyAsync(LoadingRegister loading, Contract? contract)
     {
+        // مرحله ۶ — Dual-write به دفتر کل جدید. عمداً بیرونِ شرطِ روبلیِ زیر است: مسیر قدیمی
+        // فقط برای بارگیری‌های روبلیِ قفل‌شده سطر می‌سازد، ولی دفتر کل جدید هر بارگیریِ
+        // قیمت‌دار (دلاری و روبلی) را می‌شناسد. Adapter خودش قیمت‌نداشتن را Skip می‌کند.
+        if (_purchaseAccounting is not null)
+        {
+            await _purchaseAccounting.TryPostPurchaseAsync(loading);
+        }
+
         if (contract is null
             || contract.ContractType != ContractType.Purchase
             || !contract.SupplierId.HasValue

@@ -28,4 +28,10 @@ public sealed class AccountingPilotOptions
     public bool Expense { get; set; }
     public bool ExpensePayment { get; set; }
     public bool CommissionPayment { get; set; }
+
+    // Stage 6 — purchase and inventory. Purchase raises the supplier payable against goods in
+    // transit; InventoryReceipt moves those goods from in-transit into inventory, so the two
+    // are normally enabled together.
+    public bool Purchase { get; set; }
+    public bool InventoryReceipt { get; set; }
 }
