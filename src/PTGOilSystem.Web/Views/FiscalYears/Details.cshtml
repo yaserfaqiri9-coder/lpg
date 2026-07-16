@@ -50,6 +50,7 @@
                     <th>بدهکار</th>
                     <th>بستانکار</th>
                     <th>اختلاف</th>
+                    <th class="ak-col-actions">عملیات مجاز</th>
                 </tr>
             </thead>
             <tbody>
@@ -74,11 +75,32 @@
                         <td>
                             <span class="ak-status @(period.IsBalanced ? "is-active" : "is-inactive")">@NumberDisplay.Money(period.Difference)</span>
                         </td>
+                        <td class="ak-col-actions">
+                            @if (period.AllowedLockActions.Count == 0)
+                            {
+                                <span class="ak-hint">-</span>
+                            }
+                            else
+                            {
+                                foreach (var action in period.AllowedLockActions)
+                                {
+                                    <form asp-action="ChangePeriodLock" method="post" class="d-inline"
+                                          data-ptg-confirm="true" data-ptg-confirm-title="تغییر قفل دوره"
+                                          data-ptg-confirm-message="@action.ConfirmMessage">
+                                        @Html.AntiForgeryToken()
+                                        <input type="hidden" name="id" value="@year.FiscalYearId" />
+                                        <input type="hidden" name="fiscalPeriodId" value="@period.PeriodId" />
+                                        <input type="hidden" name="status" value="@action.TargetStatus" />
+                                        <button type="submit" class="btn btn-light btn-sm">@action.Label</button>
+                                    </form>
+                                }
+                            }
+                        </td>
                     </tr>
                 }
                 @if (Model.Periods.Count == 0)
                 {
-                    <tr><td colspan="10"><div class="ak-empty">دوره‌ای ثبت نشده است</div></td></tr>
+                    <tr><td colspan="11"><div class="ak-empty">دوره‌ای ثبت نشده است</div></td></tr>
                 }
             </tbody>
         </table>

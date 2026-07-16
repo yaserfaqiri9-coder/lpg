@@ -195,7 +195,7 @@ public sealed class AccountingCorePostgreSqlTests(AccountingPostgreSqlFixture fi
 
         var error = await Assert.ThrowsAsync<AccountingValidationException>(
             () => CreatePostingService(db).PostAsync(BalancedRequest(scope)));
-        Assert.Equal("CLOSED_ACCOUNTING_DATE", error.Code);
+        Assert.Equal("PERIOD_HARD_LOCKED", error.Code);
     }
 
     [Fact]

@@ -19,7 +19,7 @@ namespace PTGOilSystem.Web.Tests;
 [Collection(AccountingPostgreSqlCollection.CollectionName)]
 public sealed class Stage8AccountingAdapterTests(AccountingPostgreSqlFixture fixture)
 {
-    private static readonly DateTime EventDate = new(2026, 7, 20);
+    private static readonly DateTime EventDate = new(2026, 7, 5);
 
     [Fact]
     public void SourceEventId_Formats_Are_Stable()

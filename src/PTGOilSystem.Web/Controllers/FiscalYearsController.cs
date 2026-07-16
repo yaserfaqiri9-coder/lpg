@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PTGOilSystem.Web.Models.Entities;
 using PTGOilSystem.Web.Security;
 using PTGOilSystem.Web.Services.Accounting;
 
@@ -16,6 +17,7 @@ namespace PTGOilSystem.Web.Controllers;
 public class FiscalYearsController(
     IFiscalYearOverviewService overview,
     IFiscalYearProvisioningService provisioning,
+    IFiscalPeriodLockService periodLocks,
     ICurrentUserContext currentUser) : Controller
 {
     [HttpGet]
@@ -45,6 +47,32 @@ public class FiscalYearsController(
             TempData["err"] = result.ErrorCode ?? "ساخت سال مالی بعدی مجاز نیست.";
 
         return RedirectToAction(nameof(Index), new { companyId });
+    }
+
+    /// <summary>
+    /// مرحله ۱۱ — تغییرِ قفلِ دوره. قفلِ سخت از اینجا هم برگشت‌ناپذیر است؛ سرویس آن را رد می‌کند.
+    /// </summary>
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [Authorize(Policy = AuthPolicies.AdminOnly)]
+    public async Task<IActionResult> ChangePeriodLock(
+        int id,
+        int fiscalPeriodId,
+        FiscalPeriodStatus status,
+        CancellationToken cancellationToken)
+    {
+        var result = await periodLocks.ChangeStatusAsync(
+            fiscalPeriodId,
+            status,
+            currentUser.UserId,
+            cancellationToken);
+
+        if (result.Succeeded)
+            TempData["ok"] = "وضعیت قفل دوره تغییر کرد.";
+        else
+            TempData["err"] = result.ErrorCode ?? "تغییر قفل دوره مجاز نیست.";
+
+        return RedirectToAction(nameof(Details), new { id });
     }
 
     private bool CanManage => RoleAccessRules.CanManageUsers(User);

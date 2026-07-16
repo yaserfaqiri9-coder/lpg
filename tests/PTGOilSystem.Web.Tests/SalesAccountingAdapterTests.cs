@@ -20,7 +20,7 @@ namespace PTGOilSystem.Web.Tests;
 [Collection(AccountingPostgreSqlCollection.CollectionName)]
 public sealed class SalesAccountingAdapterTests(AccountingPostgreSqlFixture fixture)
 {
-    private static readonly DateTime SaleDate = new(2026, 7, 20);
+    private static readonly DateTime SaleDate = new(2026, 7, 5);
 
     [Fact]
     public void SourceEventId_Formats_Are_Stable()

@@ -22,7 +22,7 @@
 | ۸.۵ | انتقال بین ترمینال‌ها (بستن بدهی‌ها) | ✅ کامل (بدهی ۱ بسته؛ ۲ و ۳ منتظر تصمیم) |
 | ۹ | Cutover و AccountingReadiness | ✅ کامل |
 | ۱۰ | UI ساده‌ی سال مالی | ✅ کامل |
-| ۱۱ | قفل دوره و AccountingDate | ⛔ شروع‌نشده |
+| ۱۱ | قفل دوره و AccountingDate | ✅ کامل |
 | ۱۲ | چک‌لیست بستن سال | ⛔ شروع‌نشده |
 | ۱۳ | Trial Close (+ تسعیر پایان‌دوره) | ⛔ شروع‌نشده |
 | ۱۴ | Final Close | ⛔ شروع‌نشده |
@@ -751,6 +751,93 @@ CHECKهای موجود فقط `DateRange` و `PeriodNumber` هستند). پس م
 - ویوها فقط از `_AkPageHeader` و `ak-table` و `ak-form`ِ موجود استفاده می‌کنند. **هیچ CSS یا
   کامپوننت موازی ساخته نشد** و هیچ فایل UI نامرتبطی لمس نشد (هر دو تست‌شده).
 - Audit: ساختِ سال بعد `AuditAction.Insert` با diff کامل می‌نویسد، **داخل همان تراکنش**.
+
+---
+
+## مرحله ۱۱ — قفل دوره و AccountingDate ✅
+
+### ✅ AccountingDate از قبل وجود داشت — Migration ساخته نشد
+`JournalEntry` از همان مرحله ۲ سه تاریخ جدا دارد: `AccountingDate`، `DocumentDate` و
+`OperationDate`. پس چیزی اضافه نشد و هیچ Backfill حدسی لازم نبود؛ فقط **enforce** شد.
+`AccountingDate` تنها تاریخی است که گارد می‌سنجد: `DocumentDate`/`OperationDate` می‌گویند سند و
+رویدادِ تجاری کِی بودند، `AccountingDate` می‌گوید سند در کدام دفتر می‌نشیند (تست‌شده:
+`The_Guard_Reads_Only_The_Accounting_Date_Not_The_Document_Date`).
+
+### ✅ چرا «همهٔ Adapterها از Guard رد می‌شوند» اثبات‌پذیر است، نه ادعا
+معماری از قبل یک گلوگاه داشت و مرحله ۱۱ فقط آن را دقیق کرد:
+- **تنها `AccountingPostingService` سند می‌سازد** — تست `Only_The_Posting_Service_Creates_Journal_Entries`
+  کلِ `src/` را می‌گردد و اگر روزی جای دیگری `new JournalEntry` بنویسد می‌شکند.
+- **تنها `PeriodGuard` تقویم را resolve می‌کند** — تست `Only_The_Period_Guard_Resolves_The_Fiscal_Calendar`.
+- **`PostAsync` و `ReverseAsync` هر دو از `PostInternalAsync` رد می‌شوند** و آن پیش از ساختنِ هر
+  چیزی گارد را صدا می‌زند — پس برگشت هم دقیقاً مثل ثبت گارد می‌خورد.
+
+یعنی آنچه روی گارد تست می‌شود دربارهٔ **همهٔ** آداپترهای مراحل ۱ تا ۸.۵ صادق است و هیچ مسیر
+دورزننده‌ای از Controller/Service/Adapter باقی نمانده.
+
+### Reason Codeها
+```
+ACCOUNTING_DATE_OUT_OF_RANGE  تاریخ آینده، یا خارج از هر سال مالیِ این شرکت
+FISCAL_YEAR_CLOSED            سالِ این تاریخ بسته است
+FISCAL_YEAR_NOT_OPEN          سال Draft یا در حال بستن است
+PERIOD_NOT_FOUND              سال هست، دوره‌ای برای این تاریخ نیست
+COMPANY_PERIOD_MISMATCH       دوره متعلق به شرکت دیگری است
+PERIOD_SOFT_LOCKED            ثبت عادی ممنوع
+PERIOD_HARD_LOCKED            ثبت/برگشت/Repost/Backdate بدون استثنا ممنوع
+INVALID_COMPANY               (از قبل موجود) شرکت نیست یا غیرفعال است
+```
+
+`COMPANY_PERIOD_MISMATCH` واقعاً قابلِ رسیدن است چون دوره عمداً **بدون فیلترِ شرکت** خوانده
+می‌شود: اگر دوره‌ای از شرکت دیگری داخل سالِ این شرکت باشد باید دیده و رد شود، نه اینکه با فیلتر
+ناپدید شود و به‌جایش «دوره پیدا نشد» بگیرد.
+
+### قواعد اجراشده
+- **دورهٔ باز** → ثبت مجاز. **سالِ `Reopened`** هم مثل `Open` ثبت می‌پذیرد — معنیِ بازگشایی همین
+  است (مرحله ۱۵ تعیین می‌کند *چه کسی* می‌تواند سال را به این وضعیت ببرد).
+- **`SoftLocked`** → ثبت عادی رد. استثنا فقط با `AppPermissions.PostToSoftLockedPeriod` +
+  دلیلِ اجباری + Audit. **نقشِ Admin عمداً کافی نیست** — «فقط با Permission مشخص» یعنی همین.
+  بدون سرویسِ Audit اصلاً انجام نمی‌شود (`PERIOD_EXCEPTION_AUDIT_UNAVAILABLE`): استثنای بی‌ردّ با
+  «قفل نبودن» فرقی ندارد. **هیچ آداپتری این مسیر را صدا نمی‌زند** — ثبت عادی همیشه رد می‌شود.
+- **`HardLocked`** → هیچ استثنایی ندارد، حتی با Permission (تست‌شده).
+- **دورهٔ `Closed`ِ قدیمی** از نظر ثبت دقیقاً `HardLocked` است — سخت‌گیرانه‌ترین معنیِ موجود، و
+  همان رفتاری که قبلاً هم داشت. فقط Reason Codeاش از `CLOSED_ACCOUNTING_DATE` به
+  `PERIOD_HARD_LOCKED` دقیق‌تر شد؛ سه تست موجود به همین کد مهاجرت کردند.
+- **Backdating**: قدمتِ تاریخ به‌خودی‌خود ممنوع نیست — آنچه Backdating را می‌بندد قفلِ دوره است.
+  ولی **تاریخ آینده هرگز**: سندی که هنوز اتفاق نیفتاده نباید دفتر را تکان بدهد. مرزِ «آینده» روز
+  است نه لحظه (امروز قبول، فردا رد).
+- **Reversal**: سند اصلی دست‌نخورده می‌ماند (رفتار از قبل موجودِ `ReverseAsync`) و
+  `AccountingDate`ِ برگشت خودش از گارد رد می‌شود — یعنی برگشت نمی‌تواند در دورهٔ بستهٔ قبلی بنشیند.
+
+### قفلِ دوره — `FiscalPeriodLockService`
+تنها مسیرِ نوشتنِ `FiscalPeriod.Status`. دو قاعده‌ی عمدی:
+1. **قفلِ سخت برگشت‌ناپذیر است.** اگر بشود بازش کرد، قفل سخت نیست و همهٔ تضمین‌های این مرحله به یک
+   کلیک تبدیل می‌شوند. بازگشایی کارِ مرحله ۱۵ است.
+2. **دورهٔ سالِ بسته اصلاً تغییر نمی‌کند.**
+
+هر تغییر وضعیت Audit می‌شود داخل همان تراکنش. تغییر به همان وضعیت Idempotent است و چیزی نمی‌نویسد.
+دکمه‌های صفحهٔ جزئیات از همان قاعده ساخته می‌شوند (`BuildLockActions`) تا صفحه هرگز کاری را
+پیشنهاد نکند که سرویس ردش می‌کند. مسیر: `POST` + ضدجعل + `AdminOnly`.
+
+### فایل‌های جدید
+- `Services/Accounting/FiscalPeriodLockService.cs`
+- `tests/PTGOilSystem.Web.Tests/PeriodGuardTests.cs` (۳۰ تست)
+
+### فایل‌های تغییرکرده
+- `Services/Accounting/FiscalCalendarService.cs` — `ResolveAsync` که به‌جای «پیدا شد/نشد» **دلیلِ
+  دقیق** برمی‌گرداند. `FindOpenPeriodAsync` سرِ جایش ماند.
+- `Services/Accounting/PeriodGuard.cs` — Reason Codeهای دقیق + قاعدهٔ تاریخ آینده + مسیر استثنا.
+- `Security/RoleAccessRules.cs` — `AppPermissions.PostToSoftLockedPeriod`.
+- `Controllers/FiscalYearsController.cs` + `Views/FiscalYears/Details.cshtml` +
+  `Models/Accounting/FiscalYearViewModels.cs` + `Services/Accounting/FiscalYearOverviewService.cs`
+  — عملیاتِ قفل روی صفحهٔ مرحله ۱۰.
+- `Program.cs` — ثبت DI.
+
+### ⚠️ پنج ثابتِ تاریخ در تست‌ها به گذشته منتقل شد
+`SalesAccountingAdapterTests`، `Stage8AccountingAdapterTests`،
+`InventoryTransferAccountingAdapterTests` (هر سه `2026-07-20`) و `AccountingReversalTests` و
+`PurchaseAccountingAdapterTests` (`2026-07-15` + رسیدِ `AddDays(2)`) تاریخِ **آینده** پست می‌کردند
+و قاعدهٔ جدید ردشان کرد. هر پنج به `2026-07-05` رفتند — داخل همان دورهٔ مالیِ ژوئیهٔ ۲۰۲۶ که از
+قبل seed می‌شد، ولی قطعاً گذشته. این تاریخ‌ها دلخواه بودند و هیچ معنیِ تجاری نداشتند؛ ضمناً
+تست‌ها را از وابستگی به تقویمِ ماشین هم آزاد می‌کند.
 
 ---
 

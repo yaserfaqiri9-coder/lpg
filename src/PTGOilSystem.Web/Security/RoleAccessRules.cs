@@ -7,6 +7,13 @@ public static class AppPermissions
 {
     public const string ManageData = "ManageData";
     public const string ManageUsers = "ManageUsers";
+
+    /// <summary>
+    /// مرحله ۱۱ — اجازهٔ ثبتِ استثنایی در دورهٔ قفل‌نرم. عمداً از نقش استنتاج نمی‌شود (حتی Admin):
+    /// «فقط با Permission مشخص» یعنی کسی که این Claim را ندارد، هر نقشی هم داشته باشد، نمی‌تواند.
+    /// قفلِ سخت با این Permission هم باز نمی‌شود.
+    /// </summary>
+    public const string PostToSoftLockedPeriod = "PostToSoftLockedPeriod";
 }
 
 public sealed record RoleNavigationItem(

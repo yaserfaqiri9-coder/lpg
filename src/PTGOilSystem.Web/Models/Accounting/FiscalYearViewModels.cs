@@ -19,6 +19,15 @@ public sealed record FiscalPeriodRow(
     FiscalPeriodStatus Status,
     bool IsCurrent);
 
+/// <summary>
+/// یک عملیاتِ قفلِ مجاز روی دوره. اینکه چه چیزی مجاز است در سرویس تصمیم گرفته می‌شود، نه در View —
+/// وگرنه دکمهٔ صفحه و قاعدهٔ سرویس می‌توانند از هم جدا بیفتند.
+/// </summary>
+public sealed record FiscalPeriodLockAction(
+    FiscalPeriodStatus TargetStatus,
+    string Label,
+    string ConfirmMessage);
+
 /// <summary>سطر جدولِ دورهٔ صفحهٔ جزئیات — با ارقام سند. بازهٔ AccountingDate همان بازهٔ دوره است.</summary>
 public sealed record FiscalPeriodDetailRow(
     int PeriodId,
@@ -32,7 +41,8 @@ public sealed record FiscalPeriodDetailRow(
     string? LockedByUser,
     int JournalCount,
     decimal TotalDebit,
-    decimal TotalCredit)
+    decimal TotalCredit,
+    IReadOnlyList<FiscalPeriodLockAction> AllowedLockActions)
 {
     public decimal Difference => TotalDebit - TotalCredit;
     public bool IsBalanced => Difference == 0m;

@@ -253,7 +253,7 @@ public sealed class SupplierPaymentAllocationAccountingAdapterTests(AccountingPo
         var service = CreateService(db, pilotEnabled: true);
         var error = await Assert.ThrowsAsync<AccountingValidationException>(
             () => service.CreateAsync(NewRequest(scope, amount: 100m)));
-        Assert.Equal("CLOSED_ACCOUNTING_DATE", error.Code);
+        Assert.Equal("PERIOD_HARD_LOCKED", error.Code);
 
         await using var verifyDb = fixture.CreateDbContext();
         Assert.Equal(0, await verifyDb.SupplierPaymentAllocations.CountAsync(

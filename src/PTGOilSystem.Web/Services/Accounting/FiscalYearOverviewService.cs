@@ -162,7 +162,8 @@ public sealed class FiscalYearOverviewService(
                     owner?.LockedBy,
                     counts.FirstOrDefault(c => c.PeriodId == p.PeriodId)?.Count ?? 0,
                     total?.Debit ?? 0m,
-                    total?.Credit ?? 0m);
+                    total?.Credit ?? 0m,
+                    BuildLockActions(summary.Status, p.Status, canManage));
             })
             .ToList();
 
@@ -242,6 +243,44 @@ public sealed class FiscalYearOverviewService(
     /// نامِ سال بعد: اگر نام سالِ قبل عددِ سالِ شروعش را داشته باشد همان عدد یکی جلو می‌رود،
     /// وگرنه نام از تاریخ ساخته می‌شود. هیچ الگوی ناشناخته‌ای اختراع نمی‌شود.
     /// </summary>
+    /// <summary>
+    /// عملیاتِ قفلی که روی این دوره مجاز است — همان قاعده‌ای که
+    /// <see cref="FiscalPeriodLockService"/> اجرا می‌کند، تا دکمهٔ صفحه هرگز کاری را پیشنهاد نکند
+    /// که سرویس ردش می‌کند.
+    ///
+    /// قفلِ سخت هیچ عملیاتی ندارد: برگشت‌ناپذیر است. دورهٔ سالِ بسته هم هیچ عملیاتی ندارد.
+    /// </summary>
+    private static IReadOnlyList<FiscalPeriodLockAction> BuildLockActions(
+        FiscalYearStatus yearStatus,
+        FiscalPeriodStatus periodStatus,
+        bool canManage)
+    {
+        if (!canManage
+            || yearStatus == FiscalYearStatus.Closed
+            || periodStatus == FiscalPeriodStatus.HardLocked)
+        {
+            return [];
+        }
+
+        return periodStatus switch
+        {
+            FiscalPeriodStatus.Open =>
+            [
+                new(FiscalPeriodStatus.SoftLocked, "قفل نرم",
+                    "ثبت عادی در این دوره بسته شود؟ فقط عملیات استثنایی با مجوز صریح ممکن می‌ماند."),
+                new(FiscalPeriodStatus.HardLocked, "قفل سخت",
+                    "قفل سخت برگشت‌ناپذیر است. بعد از آن هیچ ثبت، برگشت یا اصلاحی در این دوره ممکن نیست. ادامه می‌دهید؟")
+            ],
+            FiscalPeriodStatus.SoftLocked =>
+            [
+                new(FiscalPeriodStatus.Open, "بازکردن", "دوره دوباره برای ثبت عادی باز شود؟"),
+                new(FiscalPeriodStatus.HardLocked, "قفل سخت",
+                    "قفل سخت برگشت‌ناپذیر است. بعد از آن هیچ ثبت، برگشت یا اصلاحی در این دوره ممکن نیست. ادامه می‌دهید؟")
+            ],
+            _ => []
+        };
+    }
+
     /// <summary>
     /// سالی که «سالِ بعد» از رویش آینه می‌شود — دقیقاً همان سالی که صفحه به‌عنوان سالِ جاری نشان
     /// می‌دهد. <see cref="FiscalYearProvisioningService"/> هم از همین متد استفاده می‌کند تا پیشنهاد
