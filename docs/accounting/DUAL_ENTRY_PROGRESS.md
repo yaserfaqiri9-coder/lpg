@@ -24,7 +24,7 @@
 | ۱۰ | UI ساده‌ی سال مالی | ✅ کامل |
 | ۱۱ | قفل دوره و AccountingDate | ✅ کامل |
 | ۱۲ | چک‌لیست بستن سال | ✅ کامل (فقط‌خواندنی + Export JSON/CSV) |
-| ۱۳ | Trial Close (+ تسعیر پایان‌دوره) | ⛔ شروع‌نشده |
+| ۱۳ | Trial Close (+ تسعیر پایان‌دوره) | ✅ کامل (Migration ساخته‌شده، اجرانشده) |
 | ۱۴ | Final Close | ⛔ شروع‌نشده |
 | ۱۵ | بازگشایی کنترل‌شده | ⛔ شروع‌نشده |
 
@@ -1016,6 +1016,71 @@ Final Close، تسعیر پایان دوره Pending (Warning تا مرحله ۱
 `[Authorize(ManageData)]`، فقط GET، بدون هیچ مسیر نوشتنی. Export JSON و CSV ساده و بدون Package
 جدید (نقل‌قول‌گذاری استاندارد CSV + BOM). Company isolation تست‌شده (سند نامتوازنِ شرکت دیگر نشت
 نمی‌کند؛ سالِ شرکت دیگر با شناسهٔ این شرکت null می‌شود). Idempotency تست‌شده.
+
+---
+
+## مرحله ۱۳ — Trial Close و تسعیرِ پایان دوره ✅
+
+### تصمیم‌های قطعی (تأییدشده از کاربر در این چت)
+- **مبنای نرخِ بستن:** `DailyFxRate` با `Base=USD, Quote=ارز`، سطرِ با `RateDate == FiscalYear.EndDate`.
+  تبدیل: `usd = SourceAmount / Rate`. **نبودِ نرخِ دقیقِ EndDate یک Blocker است؛ هیچ fallback نرخ
+  (قبلی/بعدی/پیش‌فرض) استفاده نمی‌شود.**
+- Trial Close سال را نمی‌بندد، دوره‌ای را HardLock نمی‌کند و ClosedAt را تنظیم نمی‌کند.
+
+### تغییرات مدل + Migration (اجرانشده)
+- `AccountingEnums.cs` — `MonetaryTreatment {Unspecified, Monetary, NonMonetary}` و
+  `FiscalYearCloseRunType {Trial, Final}`.
+- `Account.MonetaryTreatment` (پیش‌فرض Unspecified — هیچ حسابی ضمنی تسعیر نمی‌شود).
+- `FiscalYearCloseRun` — `RunType`, `Revision`, `FailureCode`, `ChecklistSnapshotJson`,
+  `WarningAcknowledgementsJson`, `ClosingRateSnapshotJson`, `RevaluationJournalIdsJson`,
+  `JournalCount`, `DebitTotal`, `CreditTotal`, `SourceDataCutoff`, `LastJournalEntryId`,
+  `LastJournalPostedAt`, `SnapshotHash`.
+- `AccountingChartSeeder` — تعیینِ صریحِ MonetaryTreatment فقط برای حساب‌های استاندارد:
+  `1100 Cash/Bank`، `1200 AR`، `2100 AP` = **Monetary**؛ Advanceها و بقیه = **NonMonetary**.
+- Migration: `20260716203917_AddMonetaryTreatmentAndCloseRunSnapshot`
+  (فقط جدول‌های `Accounts` و `FiscalYearCloseRuns`). **اجرا نشده.**
+
+### فایل‌های جدید
+- `Services/Accounting/TrialCloseModels.cs`، `Services/Accounting/TrialCloseService.cs`
+- `Controllers/TrialCloseController.cs`، `Views/TrialClose/Index.cshtml`
+- `Models/Accounting/TrialClosePageViewModel.cs`
+- `tests/PTGOilSystem.Web.Tests/TrialCloseServiceTests.cs` (۱۴ تست، همه سبز)
+- `ClosingChecklistService` — افزودن کنترلِ `MONETARY_TREATMENT_UNSPECIFIED` (Blocked).
+
+### Mapping تسعیر (قاعدهٔ یکنواخت برای Asset و Liability)
+```
+netUsd    = Σ(Debit − Credit)   (تا EndDate، فقط Posted، فقط حساب‌های Monetary، ارز ≠ USD)
+netSource = Σ(±TransactionAmount)   (+ برای بدهکار، − برای بستانکار)
+closingUsd = round(netSource / closingRate, 4)
+difference = round(closingUsd − netUsd, 4)
+
+difference > 0 : Dr <حساب پولی> diff   Cr 4200 Exchange Gain diff
+difference < 0 : Dr 5300 Exchange Loss |diff|   Cr <حساب پولی> |diff|
+```
+ابعادِ Party/Contract/Shipment/CashAccount روی سطرِ حساب پولی حفظ می‌شوند. خطوطِ تسعیر به USD/۱
+پست می‌شوند (خودِ اختلاف یک مبلغِ Functional است) تا تلهٔ گردکردنِ جفت‌ارز پیش نیاید.
+
+### نسخه‌بندی و برگشتِ خودکار
+- `SourceEventId = FiscalYearRevaluation:{FiscalYearId}:{Currency}:{Revision}`.
+- اجرای مجدد بدون تغییرِ نرخ/مانده → Duplicate و بی‌اثر (تست‌شده).
+- تغییرِ نرخ/مانده → نسخهٔ قبلی و برگشتِ خودکارش Supersede می‌شوند و `Revision+1` پست می‌شود
+  (سندِ Posted هرگز ویرایش/حذف نمی‌شود).
+- برگشتِ خودکار در **اولین دورهٔ بازِ سالِ بعد** پست می‌شود (`…:{rev}:Reversal`)، Idempotent.
+- نبودِ سالِ بعد یا دورهٔ بازِ آن → Preview نمایش داده می‌شود ولی Apply با
+  `NEXT_YEAR_OPEN_PERIOD_MISSING` رد می‌شود.
+
+### State machine (بدون تغییرِ سال/دوره)
+Trial Close فقط یک `FiscalYearCloseRun` با `RunType=Trial` و Snapshot/Hash می‌سازد؛ وضعیتِ سال
+`Open` می‌ماند، `ClosedAt` خالی می‌ماند و هیچ دوره‌ای HardLock نمی‌شود (تست‌شده).
+
+### مسیرها و دسترسی
+`GET preview`، `POST run`، `POST apply-revaluation` — همه AdminOnly؛ POSTها antiforgery؛ هیچ
+عملیاتِ تغییردهنده با GET نیست.
+
+### ⚠️ Migration اجرانشده
+```
+dotnet ef database update --project src/PTGOilSystem.Web   # فقط روی دیتابیس هدف درست
+```
 
 ---
 

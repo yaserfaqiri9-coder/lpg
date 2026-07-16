@@ -68,6 +68,7 @@ public sealed class ClosingChecklistService(
         await AddPendingCostCheckAsync(checks, companyId, year.Id, cancellationToken);
         await AddNegativeInventoryCheckAsync(checks, companyId, year.Id, cancellationToken);
         await AddInventoryConsistencyCheckAsync(checks, companyId, year.Id, cancellationToken);
+        await AddMonetaryTreatmentCheckAsync(checks, companyId, year.Id, cancellationToken);
         await AddTransferCompletenessCheckAsync(checks, companyId, year.Id, cancellationToken);
         AddInventoryInTransitCheck(checks, companyId, year.Id, settings);
         await AddExpenseTypeCheckAsync(checks, companyId, year.Id, cancellationToken);
@@ -500,6 +501,35 @@ public sealed class ClosingChecklistService(
                 companyId, fiscalYearId, inconsistent.Count,
                 Sample(inconsistent.Select(p => $"PoolId={p.Id}, ProductId={p.ProductId}, TerminalId={p.TerminalId}, Qty={p.QuantityMt}, Value={p.TotalValueUsd}")),
                 "منشأ این Poolها بررسی شود.", "Accounting:Pilots:Cogs"));
+    }
+
+    // مرحله ۱۳ — حساب‌های دارای فعالیتِ Posted که طبقه‌بندیِ پولی/غیرپولی‌شان Unspecified است.
+    // بدون طبقه‌بندیِ صریح، تسعیر نمی‌داند کدام حساب پولی است و نباید حدس بزند — پس Blocked.
+    private async Task AddMonetaryTreatmentCheckAsync(
+        List<ClosingCheckResult> checks, int companyId, int fiscalYearId, CancellationToken cancellationToken)
+    {
+        var unclassified = await db.Accounts.AsNoTracking()
+            .Where(a => a.CompanyId == companyId && a.IsActive
+                && a.MonetaryTreatment == MonetaryTreatment.Unspecified
+                && db.JournalEntryLines.Any(l => l.AccountId == a.Id
+                    && l.JournalEntry!.FiscalYearId == fiscalYearId
+                    && l.JournalEntry.Status == JournalEntryStatus.Posted))
+            .OrderBy(a => a.Code)
+            .Select(a => new { a.Id, a.Code, a.Name })
+            .ToListAsync(cancellationToken);
+
+        checks.Add(unclassified.Count == 0
+            ? Result("MONETARY_TREATMENT_CLASSIFIED", ClosingCheckStatus.Passed,
+                "طبقه‌بندیِ پولی همه حساب‌های فعال مشخص است",
+                "هیچ حسابِ دارای فعالیتِ Posted با طبقه‌بندیِ Unspecified نمانده.",
+                companyId, fiscalYearId)
+            : Result("MONETARY_TREATMENT_UNSPECIFIED", ClosingCheckStatus.Blocked,
+                "حساب بدون طبقه‌بندیِ پولی/غیرپولی",
+                "طبقه‌بندیِ Monetary/NonMonetary این حساب‌ها مشخص نیست؛ تسعیر پایان دوره بدون آن ممکن نیست "
+                    + "و از شماره/نام حساب حدس زده نمی‌شود.",
+                companyId, fiscalYearId, unclassified.Count,
+                Sample(unclassified.Select(a => $"AccountId={a.Id}, Code={a.Code}, Name={a.Name}")),
+                "MonetaryTreatment هر حساب (Monetary یا NonMonetary) با تصمیم صریح تعیین شود."));
     }
 
     // ۱۳ — انتقال بین ترمینال‌ها کامل باشد (بها منتقل شده باشد).

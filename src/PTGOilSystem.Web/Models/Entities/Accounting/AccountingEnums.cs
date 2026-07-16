@@ -57,6 +57,28 @@ public enum FiscalYearCloseRunStatus
     Failed = 3
 }
 
+/// <summary>
+/// مرحله ۱۳ — طبقه‌بندیِ صریحِ پولی/غیرپولیِ حساب. **هرگز از شماره یا نامِ حساب حدس زده نمی‌شود.**
+/// فقط حساب‌های <see cref="MonetaryTreatment.Monetary"/> در تسعیرِ پایان دوره شرکت می‌کنند.
+/// <see cref="MonetaryTreatment.Unspecified"/> یعنی هنوز تعیین‌تکلیف نشده — چک‌لیست آن را Blocked نشان می‌دهد.
+/// </summary>
+public enum MonetaryTreatment
+{
+    Unspecified = 0,
+    Monetary = 1,
+    NonMonetary = 2
+}
+
+/// <summary>
+/// مرحله ۱۳/۱۴ — نوعِ اجرای بستنِ سال. Trial قابل‌تکرار و بی‌اثر بر وضعیتِ سال است؛ Final اتمیک و
+/// غیرقابل‌تکرارِ ناخواسته است.
+/// </summary>
+public enum FiscalYearCloseRunType
+{
+    Trial = 0,
+    Final = 1
+}
+
 public enum AccountingPartyType
 {
     Customer = 1,

@@ -1,0 +1,146 @@
+@using PTGOilSystem.Web.Models.Accounting
+@model TrialClosePageViewModel
+@{
+    ViewData["Title"] = "Trial Close و تسعیر پایان دوره";
+    var p = Model.Preview;
+}
+
+<div class="ak-list-page">
+    <partial name="~/Views/Shared/Components/Ak/_AkPageHeader.cshtml"
+             model="@(("Trial Close و تسعیر پایان دوره", false,
+                       (string?)null, (string?)null, (string?)null, (string?)null,
+                       (string?)null, (string?)null, (string?)null))" />
+
+    @if (TempData["ok"] is string ok) { <div class="alert alert-success">@ok</div> }
+    @if (TempData["err"] is string err) { <div class="alert alert-danger">@err</div> }
+
+    <form method="get" asp-action="Index" class="ak-form">
+        <div class="ak-field">
+            <label class="ak-label" for="companyId">شرکت</label>
+            <select class="form-select" id="companyId" name="companyId" onchange="this.form.submit()">
+                @foreach (var c in Model.Companies)
+                {
+                    <option value="@c.CompanyId" selected="@c.IsSelected">@c.Name</option>
+                }
+            </select>
+        </div>
+        <div class="ak-field">
+            <label class="ak-label" for="fiscalYearId">سال مالی</label>
+            <select class="form-select" id="fiscalYearId" name="fiscalYearId" onchange="this.form.submit()">
+                @foreach (var y in Model.Years)
+                {
+                    <option value="@y.FiscalYearId" selected="@y.IsSelected">@y.Name</option>
+                }
+            </select>
+        </div>
+    </form>
+
+    @if (p is null)
+    {
+        <div class="ak-empty"><i class="bi bi-calculator" aria-hidden="true"></i>سال مالی‌ای برای Trial Close انتخاب نشده است</div>
+    }
+    else
+    {
+        <div class="my-3">
+            @if (p.BlockingReason is not null)
+            {
+                <div class="alert alert-danger">
+                    <strong>مانع اعمال تسعیر:</strong> @p.BlockingReason
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-success">آماده اجرا — هیچ مانع قطعی وجود ندارد.</div>
+            }
+
+            @if (p.ChecklistBlockers.Count > 0)
+            {
+                <div class="alert alert-danger"><strong>چک‌لیست Blocked:</strong> @string.Join("، ", p.ChecklistBlockers)</div>
+            }
+            @if (p.ChecklistWarnings.Count > 0)
+            {
+                <div class="alert alert-warning"><strong>هشدارها:</strong> @string.Join("، ", p.ChecklistWarnings)</div>
+            }
+            @if (p.UnclassifiedMonetaryAccounts.Count > 0)
+            {
+                <div class="alert alert-danger"><strong>حساب بدون طبقه‌بندی پولی:</strong> @string.Join("، ", p.UnclassifiedMonetaryAccounts)</div>
+            }
+            @if (p.MissingRates.Count > 0)
+            {
+                <div class="alert alert-danger">
+                    <strong>نرخ پایان دوره موجود نیست:</strong>
+                    @string.Join("، ", p.MissingRates.Select(m => $"{m.Currency} @ {m.RequiredDate:yyyy-MM-dd}"))
+                </div>
+            }
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 my-3">
+            <form method="post" asp-action="RunTrialClose" asp-route-companyId="@p.CompanyId" asp-route-fiscalYearId="@p.FiscalYearId">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="acknowledgeWarnings" value="true" />
+                <button type="submit" class="btn btn-primary" @(p.ChecklistBlocked ? "disabled" : "")>ثبت Trial Close (با تأیید هشدارها)</button>
+            </form>
+            <form method="post" asp-action="ApplyRevaluation" asp-route-companyId="@p.CompanyId" asp-route-fiscalYearId="@p.FiscalYearId">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-warning" @(p.CanApply ? "" : "disabled")>اعمال تسعیر پایان دوره</button>
+            </form>
+        </div>
+
+        <h5>تسعیر محاسبه‌شده (Preview)</h5>
+        @if (p.Revaluations.Count == 0)
+        {
+            <div class="ak-empty"><i class="bi bi-check2" aria-hidden="true"></i>هیچ ماندهٔ پولیِ بازی برای تسعیر وجود ندارد</div>
+        }
+        else
+        {
+            foreach (var g in p.Revaluations)
+            {
+                <div class="mb-3">
+                    <div class="fw-bold">@g.Currency — نرخ بستن @g.ClosingRate (@g.ClosingRateDate.ToString("yyyy-MM-dd")) — خالص اختلاف: @g.NetDifferenceUsd USD</div>
+                    <div class="ak-table-wrap">
+                        <table class="ak-table">
+                            <thead>
+                                <tr><th>حساب</th><th>مانده ارز</th><th>USD دفتری</th><th>USD بستن</th><th>اختلاف</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var l in g.Lines)
+                                {
+                                    <tr>
+                                        <td>@l.AccountCode</td>
+                                        <td>@l.OpenSourceAmount</td>
+                                        <td>@l.CarryingUsd</td>
+                                        <td>@l.ClosingUsd</td>
+                                        <td>@l.DifferenceUsd</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        }
+
+        @if (Model.Runs.Count > 0)
+        {
+            <h5>اجراهای بستن سال</h5>
+            <div class="ak-table-wrap">
+                <table class="ak-table">
+                    <thead>
+                        <tr><th>#</th><th>نوع</th><th>Revision</th><th>وضعیت</th><th>تاریخ</th><th>کاربر</th><th>اسناد</th><th>Hash</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in Model.Runs)
+                        {
+                            <tr>
+                                <td>@r.Id</td><td>@r.RunType</td><td>@r.Revision</td><td>@r.Status</td>
+                                <td>@r.StartedAt.ToString("yyyy-MM-dd HH:mm")</td><td>@r.StartedBy</td>
+                                <td>@r.JournalCount</td>
+                                <td><code class="small">@(r.SnapshotHash is { Length: > 12 } h ? h[..12] : r.SnapshotHash)</code></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>

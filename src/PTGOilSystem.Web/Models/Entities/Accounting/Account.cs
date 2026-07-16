@@ -23,5 +23,12 @@ public class Account : BaseEntity
     public bool IsControlAccount { get; set; }
     public bool AllowManualPosting { get; set; } = true;
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// مرحله ۱۳ — طبقه‌بندیِ صریحِ پولی‌بودن برای تسعیرِ پایان دوره. پیش‌فرض Unspecified است تا
+    /// هیچ حسابی به‌طور ضمنی تسعیر نشود؛ فقط مقدارِ صریحِ Monetary وارد تسعیر می‌شود.
+    /// </summary>
+    public MonetaryTreatment MonetaryTreatment { get; set; } = MonetaryTreatment.Unspecified;
+
     public uint RowVersion { get; set; }
 }

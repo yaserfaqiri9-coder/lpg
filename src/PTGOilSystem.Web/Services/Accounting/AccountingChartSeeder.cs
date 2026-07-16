@@ -16,28 +16,31 @@ public sealed class AccountingChartSeeder(
     ApplicationDbContext db,
     IOptions<AccountingOptions> options) : IAccountingChartSeeder
 {
+    // مرحله ۱۳ — MonetaryTreatment فقط برای حساب‌های استانداردی که Seeder مالکِ قطعیِ آن‌هاست
+    // تعیین می‌شود. حداقلِ صریحِ پرامپ: Cash/Bank، AR و AP پولی‌اند. Advanceها و بقیهٔ حساب‌ها
+    // پیش‌فرض NonMonetary — هیچ حسابی به‌طور ضمنی تسعیر نمی‌شود.
     private static readonly AccountSeed[] DefaultAccounts =
     [
-        new("1100", "Cash/Bank Control", AccountType.Asset, NormalBalance.Debit),
-        new("1200", "Accounts Receivable", AccountType.Asset, NormalBalance.Debit),
-        new("1300", "Inventory", AccountType.Asset, NormalBalance.Debit),
-        new("1310", "Inventory In Transit", AccountType.Asset, NormalBalance.Debit),
-        new("1400", "Supplier Prepayment", AccountType.Asset, NormalBalance.Debit),
-        new("1410", "Employee Advance", AccountType.Asset, NormalBalance.Debit),
-        new("2100", "Accounts Payable", AccountType.Liability, NormalBalance.Credit),
-        new("2200", "Customer Advance", AccountType.Liability, NormalBalance.Credit),
-        new("2300", "Freight Payable", AccountType.Liability, NormalBalance.Credit),
-        new("2400", "Commission Payable", AccountType.Liability, NormalBalance.Credit),
-        new("2500", "Employee Payable", AccountType.Liability, NormalBalance.Credit),
-        new("2510", "Accrued Expenses Payable", AccountType.Liability, NormalBalance.Credit),
-        new("3100", "Current Year Profit/Loss", AccountType.Equity, NormalBalance.Credit),
-        new("3200", "Retained Earnings", AccountType.Equity, NormalBalance.Credit),
-        new("4100", "Sales Revenue", AccountType.Revenue, NormalBalance.Credit),
-        new("4200", "Exchange Gain", AccountType.Revenue, NormalBalance.Credit),
-        new("5100", "Cost of Goods Sold", AccountType.Expense, NormalBalance.Debit),
-        new("5200", "General Expense", AccountType.Expense, NormalBalance.Debit),
-        new("5300", "Exchange Loss", AccountType.Expense, NormalBalance.Debit),
-        new("5400", "Inventory Loss", AccountType.Expense, NormalBalance.Debit)
+        new("1100", "Cash/Bank Control", AccountType.Asset, NormalBalance.Debit, MonetaryTreatment.Monetary),
+        new("1200", "Accounts Receivable", AccountType.Asset, NormalBalance.Debit, MonetaryTreatment.Monetary),
+        new("1300", "Inventory", AccountType.Asset, NormalBalance.Debit, MonetaryTreatment.NonMonetary),
+        new("1310", "Inventory In Transit", AccountType.Asset, NormalBalance.Debit, MonetaryTreatment.NonMonetary),
+        new("1400", "Supplier Prepayment", AccountType.Asset, NormalBalance.Debit, MonetaryTreatment.NonMonetary),
+        new("1410", "Employee Advance", AccountType.Asset, NormalBalance.Debit, MonetaryTreatment.NonMonetary),
+        new("2100", "Accounts Payable", AccountType.Liability, NormalBalance.Credit, MonetaryTreatment.Monetary),
+        new("2200", "Customer Advance", AccountType.Liability, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("2300", "Freight Payable", AccountType.Liability, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("2400", "Commission Payable", AccountType.Liability, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("2500", "Employee Payable", AccountType.Liability, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("2510", "Accrued Expenses Payable", AccountType.Liability, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("3100", "Current Year Profit/Loss", AccountType.Equity, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("3200", "Retained Earnings", AccountType.Equity, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("4100", "Sales Revenue", AccountType.Revenue, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("4200", "Exchange Gain", AccountType.Revenue, NormalBalance.Credit, MonetaryTreatment.NonMonetary),
+        new("5100", "Cost of Goods Sold", AccountType.Expense, NormalBalance.Debit, MonetaryTreatment.NonMonetary),
+        new("5200", "General Expense", AccountType.Expense, NormalBalance.Debit, MonetaryTreatment.NonMonetary),
+        new("5300", "Exchange Loss", AccountType.Expense, NormalBalance.Debit, MonetaryTreatment.NonMonetary),
+        new("5400", "Inventory Loss", AccountType.Expense, NormalBalance.Debit, MonetaryTreatment.NonMonetary)
     ];
 
     private readonly AccountingOptions _options = options.Value;
@@ -93,7 +96,8 @@ public sealed class AccountingChartSeeder(
                     NormalBalance = seed.NormalBalance,
                     IsControlAccount = true,
                     AllowManualPosting = false,
-                    IsActive = true
+                    IsActive = true,
+                    MonetaryTreatment = seed.MonetaryTreatment
                 };
                 db.Accounts.Add(account);
                 accountsByCode.Add(seed.Code, account);
@@ -151,5 +155,6 @@ public sealed class AccountingChartSeeder(
         string Code,
         string Name,
         AccountType AccountType,
-        NormalBalance NormalBalance);
+        NormalBalance NormalBalance,
+        MonetaryTreatment MonetaryTreatment);
 }
