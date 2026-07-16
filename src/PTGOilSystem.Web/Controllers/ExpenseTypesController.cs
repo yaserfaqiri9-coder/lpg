@@ -76,7 +76,7 @@ public class ExpenseTypesController : Controller
 
     [Authorize(Policy = AuthPolicies.ManageData)]
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Create([Bind("Id,Code,Name,NamePersian,Category,IsActive,Notes")] ExpenseType model, string? returnUrl = null)
+    public async Task<IActionResult> Create([Bind("Id,Code,Name,NamePersian,Category,IsActive,Notes,PayableAccountKind")] ExpenseType model, string? returnUrl = null)
     {
         Normalize(model);
         if (!ModelState.IsValid) return View(model);
@@ -103,7 +103,7 @@ public class ExpenseTypesController : Controller
 
     [Authorize(Policy = AuthPolicies.ManageData)]
     [HttpPost, ValidateAntiForgeryToken]
-    public async Task<IActionResult> Edit(int id, [Bind("Id,Code,Name,NamePersian,Category,IsActive,Notes")] ExpenseType model)
+    public async Task<IActionResult> Edit(int id, [Bind("Id,Code,Name,NamePersian,Category,IsActive,Notes,PayableAccountKind")] ExpenseType model)
     {
         if (id != model.Id) return BadRequest();
         Normalize(model);
@@ -121,6 +121,7 @@ public class ExpenseTypesController : Controller
         existing.Category = model.Category;
         existing.IsActive = model.IsActive;
         existing.Notes = model.Notes;
+        existing.PayableAccountKind = model.PayableAccountKind;
         existing.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         TempData["ok"] = "ویرایش با موفقیت انجام شد.";

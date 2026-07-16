@@ -26,6 +26,9 @@ public class ExpensesController : Controller
     private readonly ICurrencyConversionService _currencyConversion;
     private readonly IAuditService _audit;
     private readonly ILogger<ExpensesController> _logger;
+    // مرحله ۵ — Dual-write اختیاری به دفتر کل جدید. پشت Feature Flag و null-safe: اگر تزریق
+    // نشود یا خاموش باشد، مسیر قدیمی هیچ تغییری نمی‌کند.
+    private readonly Services.Accounting.IExpenseAccountingAdapter? _expenseAccounting;
     private const int DefaultListLimit = 100;
     private const int LookupLimit = 200;
     private const string DefaultWagonRentExpenseName = "Wagon Rent";
@@ -35,12 +38,14 @@ public class ExpensesController : Controller
         ApplicationDbContext db,
         ICurrencyConversionService currencyConversion,
         IAuditService audit,
-        ILogger<ExpensesController> logger)
+        ILogger<ExpensesController> logger,
+        Services.Accounting.IExpenseAccountingAdapter? expenseAccounting = null)
     {
         _db = db;
         _currencyConversion = currencyConversion;
         _audit = audit;
         _logger = logger;
+        _expenseAccounting = expenseAccounting;
     }
 
     public ExpensesController(
@@ -1056,6 +1061,12 @@ public class ExpensesController : Controller
 
                 _db.LedgerEntries.Add(ledgerEntry);
                 await _db.SaveChangesAsync();
+
+                // مرحله ۵ — Dual-write داخل همان Transaction قدیمی.
+                if (_expenseAccounting is not null)
+                {
+                    await _expenseAccounting.TryPostExpenseAsync(expense);
+                }
 
                 await _audit.LogAndSaveAsync(
                     nameof(ExpenseTransaction),

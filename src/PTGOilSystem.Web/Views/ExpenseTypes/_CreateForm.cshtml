@@ -28,6 +28,20 @@
                 <option value="Other">سایر</option>
             </select>
         </div>
+        <div class="ak-field">
+            <label asp-for="PayableAccountKind" class="ak-label">حساب بدهی (دفتر کل)</label>
+            <select asp-for="PayableAccountKind" class="ak-input">
+                <option value="">— تعیین‌نشده —</option>
+                <option value="@((int)ExpensePayableKind.AccountsPayable)">حساب‌های پرداختنی</option>
+                <option value="@((int)ExpensePayableKind.FreightPayable)">کرایه پرداختنی</option>
+                <option value="@((int)ExpensePayableKind.CommissionPayable)">کمیسیون پرداختنی</option>
+                <option value="@((int)ExpensePayableKind.AccruedExpense)">مصارف معوق</option>
+            </select>
+            <small class="text-muted">
+                تا وقتی تعیین‌نشده باشد، مصارف این نوع وارد دفتر کل جدید نمی‌شوند.
+                برای مصارفی که طرف‌حساب بیرونی ندارند «مصارف معوق» را انتخاب کنید.
+            </small>
+        </div>
         <div class="ak-toggle-field">
             <div class="form-check form-switch">
                 <input asp-for="IsActive" class="form-check-input" role="switch" />

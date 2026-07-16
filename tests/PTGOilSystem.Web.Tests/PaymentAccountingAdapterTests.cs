@@ -30,6 +30,8 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
     [InlineData(PaymentKind.SupplierPayment, true, null, PaymentAccountingEventKind.SupplierPrepayment)]
     [InlineData(PaymentKind.SupplierPayment, false, null, PaymentAccountingEventKind.SupplierPayment)]
     [InlineData(PaymentKind.SarrafSettlement, null, null, PaymentAccountingEventKind.SarrafCashPayment)]
+    [InlineData(PaymentKind.ExpensePayment, null, null, PaymentAccountingEventKind.ExpensePayment)]
+    [InlineData(PaymentKind.CommissionPayment, null, null, PaymentAccountingEventKind.CommissionPayment)]
     public void ResolveEventKind_Uses_Payment_Nature_Not_LedgerSide(
         PaymentKind paymentKind,
         bool? isAdvancePayment,
@@ -49,10 +51,12 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
     [Theory]
     [InlineData(PaymentKind.ManualPayment)]
     [InlineData(PaymentKind.ManualReceipt)]
-    [InlineData(PaymentKind.ExpensePayment)]
     [InlineData(PaymentKind.TruckPayment)]
     [InlineData(PaymentKind.EmployeeSalaryPayment)]
-    [InlineData(PaymentKind.CommissionPayment)]
+    [InlineData(PaymentKind.EmployeeSalaryAdvance)]
+    [InlineData(PaymentKind.EmployeeReturn)]
+    [InlineData(PaymentKind.SupplierReceipt)]
+    [InlineData(PaymentKind.CustomerPayment)]
     [InlineData(PaymentKind.ServiceProviderPayment)]
     public void ResolveEventKind_Leaves_Unproven_Kinds_Unmapped(PaymentKind paymentKind)
         => Assert.Null(PaymentAccountingAdapter.ResolveEventKind(
@@ -477,25 +481,31 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
             .SingleAsync(x => x.SourceModule == PaymentAccountingAdapter.SourceModule
                 && x.SourceEventId == PaymentAccountingAdapter.BuildCreatedSourceEventId(paymentId));
 
-    private static AccountingPilotOptions PilotsFor(
+    internal static AccountingPilotOptions PilotsFor(
         bool customerReceipt = false,
         bool customerAdvance = false,
         bool supplierPayment = false,
         bool supplierPrepayment = false,
-        bool sarrafPayment = false)
+        bool sarrafPayment = false,
+        bool expense = false,
+        bool expensePayment = false,
+        bool commissionPayment = false)
         => new()
         {
             CustomerReceipt = customerReceipt,
             CustomerAdvance = customerAdvance,
             SupplierPayment = supplierPayment,
             SupplierPrepayment = supplierPrepayment,
-            SarrafPayment = sarrafPayment
+            SarrafPayment = sarrafPayment,
+            Expense = expense,
+            ExpensePayment = expensePayment,
+            CommissionPayment = commissionPayment
         };
 
     private static AccountingPilotOptions AllPilotsOn()
-        => PilotsFor(true, true, true, true, true);
+        => PilotsFor(true, true, true, true, true, true, true, true);
 
-    private static PaymentAccountingAdapter CreateAdapter(
+    internal static PaymentAccountingAdapter CreateAdapter(
         ApplicationDbContext db,
         AccountingPilotOptions pilots,
         bool accountingEnabled = true)
@@ -505,11 +515,18 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
             Enabled = accountingEnabled,
             Pilots = pilots
         });
+        var posting = new AccountingPostingService(db, new PeriodGuard(db, new FiscalCalendarService(db)), options);
         return new PaymentAccountingAdapter(
             db,
-            new AccountingPostingService(db, new PeriodGuard(db, new FiscalCalendarService(db)), options),
+            posting,
             new AccountingJournalNumberGenerator(),
             new PaymentCompanyResolver(db),
+            new ExpenseAccountingAdapter(
+                db,
+                posting,
+                new AccountingJournalNumberGenerator(),
+                options,
+                NullLogger<ExpenseAccountingAdapter>.Instance),
             options,
             NullLogger<PaymentAccountingAdapter>.Instance);
     }
@@ -599,6 +616,17 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
         var sarraf = new Sarraf { Name = Unique("Sarraf"), IsActive = true };
         db.Sarrafs.Add(sarraf);
 
+        var serviceProvider = new PTGOilSystem.Web.Models.Entities.ServiceProvider
+        {
+            Code = Unique("SP"),
+            Name = Unique("ServiceProvider"),
+            IsActive = true
+        };
+        db.ServiceProviders.Add(serviceProvider);
+
+        var driver = new Driver { FullName = Unique("Driver"), IsActive = true };
+        db.Drivers.Add(driver);
+
         var cashAccount = new CashAccount
         {
             Code = Unique("CA"),
@@ -636,7 +664,9 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
         db.Contracts.Add(contract);
         await db.SaveChangesAsync();
 
-        return new PaymentScope(company, supplier, customer, sarraf, product, contract, cashAccount, period, settings);
+        return new PaymentScope(
+            company, supplier, customer, sarraf, serviceProvider, driver,
+            product, contract, cashAccount, period, settings);
     }
 
     internal static string Unique(string prefix)
@@ -647,6 +677,8 @@ public sealed class PaymentAccountingAdapterTests(AccountingPostgreSqlFixture fi
         Supplier Supplier,
         Customer Customer,
         Sarraf Sarraf,
+        PTGOilSystem.Web.Models.Entities.ServiceProvider ServiceProvider,
+        Driver Driver,
         Product Product,
         Contract Contract,
         CashAccount CashAccount,

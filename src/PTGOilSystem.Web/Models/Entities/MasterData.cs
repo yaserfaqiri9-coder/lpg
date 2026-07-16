@@ -195,6 +195,17 @@ public class Location : BaseEntity
     [MaxLength(1000)] public string? Notes { get; set; }
 }
 
+// مرحله ۵ — حسابِ بدهیِ متناظر با یک نوع مصرف در دفتر کل جدید.
+// عمداً یک enum صریح است و نه استنتاج از Category: چون Category متن آزاد و قابل‌ویرایش کاربر
+// است و نباید انتخاب حساب حسابداری به آن وابسته شود.
+public enum ExpensePayableKind
+{
+    [System.ComponentModel.DataAnnotations.Display(Name = "حساب‌های پرداختنی")] AccountsPayable = 1,
+    [System.ComponentModel.DataAnnotations.Display(Name = "کرایه پرداختنی")] FreightPayable = 2,
+    [System.ComponentModel.DataAnnotations.Display(Name = "کمیسیون پرداختنی")] CommissionPayable = 3,
+    [System.ComponentModel.DataAnnotations.Display(Name = "مصارف معوق")] AccruedExpense = 4
+}
+
 public class ExpenseType : BaseEntity
 {
     [Required, MaxLength(50)] public string Code { get; set; } = "";
@@ -203,6 +214,11 @@ public class ExpenseType : BaseEntity
     [MaxLength(50)] public string Category { get; set; } = "Other"; // Storage, Trucking, Commission, ...
     public bool IsActive { get; set; } = true;
     [MaxLength(1000)] public string? Notes { get; set; }
+
+    // مرحله ۵ — حساب بدهیِ این نوع مصرف در دفتر کل جدید. توسط مدیر مالی تعیین می‌شود.
+    // تا وقتی null باشد، مصارف این نوع به دفتر کل جدید پست نمی‌شوند (Skip) و حدس زده نمی‌شود.
+    // منطق Ledger قدیمی و مانده‌ها به این فیلد وابسته نیستند.
+    public ExpensePayableKind? PayableAccountKind { get; set; }
 }
 
 public class Role : BaseEntity

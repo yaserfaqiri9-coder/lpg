@@ -25,7 +25,10 @@ public enum PaymentAccountingEventKind
     CustomerAdvance = 2,
     SupplierPayment = 3,
     SupplierPrepayment = 4,
-    SarrafCashPayment = 5
+    SarrafCashPayment = 5,
+    // Stage 5 — settle a liability an expense accrued.
+    ExpensePayment = 6,
+    CommissionPayment = 7
 }
 
 public sealed record PaymentAccountingResult(
@@ -52,10 +55,16 @@ public interface IPaymentAccountingAdapter
 ///   SupplierPrepayment Dr Supplier Prepayment  Cr Cash/Bank             (party = supplier)
 ///   SarrafCashPayment  Dr Accounts Payable     Cr Cash/Bank             (party = sarraf)
 ///
+/// Stage 5 adds the two flows that settle what an expense accrued. Both take their account and
+/// party from the linked expense rather than from the payment, so a settlement can never land on
+/// a different account than its accrual:
+///   ExpensePayment     Dr &lt;expense payable&gt;    Cr Cash/Bank
+///   CommissionPayment  Dr &lt;expense payable&gt;    Cr Cash/Bank
+///
 /// The cash line always carries CashAccountId; the party line always carries PartyType/PartyId
 /// plus the contract/shipment dimensions when the legacy payment supplies them.
 ///
-/// Ambiguous kinds (ManualPayment, ManualReceipt, expense/truck/employee/commission flows) are
+/// Ambiguous kinds (ManualPayment, ManualReceipt, truck/employee/service-provider flows) are
 /// deliberately not mapped here: they are skipped with UNSUPPORTED_PAYMENT_KIND and stay
 /// legacy-only until their own stage defines a proven mapping.
 ///
@@ -67,6 +76,7 @@ public sealed class PaymentAccountingAdapter(
     IAccountingPostingService postingService,
     IAccountingJournalNumberGenerator journalNumberGenerator,
     IPaymentCompanyResolver companyResolver,
+    IExpenseAccountingAdapter expenseAccounting,
     IOptions<AccountingOptions> options,
     ILogger<PaymentAccountingAdapter> logger)
     : IPaymentAccountingAdapter
@@ -90,7 +100,7 @@ public sealed class PaymentAccountingAdapter(
                 PaymentPostingStatus.Skipped, null, "UNSUPPORTED_PAYMENT_KIND");
         }
 
-        var (companyId, skipReason) = await ResolveCompanyAndSkipReasonAsync(
+        var (companyId, skipReason, settlement) = await ResolveCompanyAndSkipReasonAsync(
             payment,
             eventKind.Value,
             cancellationToken);
@@ -122,7 +132,7 @@ public sealed class PaymentAccountingAdapter(
             payment.PaymentDate.Date,
             payment.PaymentDate.Date,
             SourceModule,
-            BuildLines(payment, eventKind.Value, settings),
+            BuildLines(payment, eventKind.Value, settings, settlement),
             SourceEventId: sourceEventId,
             SourceEntityType: SourceEntityType,
             SourceEntityId: payment.Id,
@@ -159,6 +169,8 @@ public sealed class PaymentAccountingAdapter(
                 ? PaymentAccountingEventKind.SupplierPrepayment
                 : PaymentAccountingEventKind.SupplierPayment,
             PaymentKind.SarrafSettlement => PaymentAccountingEventKind.SarrafCashPayment,
+            PaymentKind.ExpensePayment => PaymentAccountingEventKind.ExpensePayment,
+            PaymentKind.CommissionPayment => PaymentAccountingEventKind.CommissionPayment,
             _ => null
         };
 
@@ -170,14 +182,32 @@ public sealed class PaymentAccountingAdapter(
             PaymentAccountingEventKind.SupplierPayment => _options.Pilots.SupplierPayment,
             PaymentAccountingEventKind.SupplierPrepayment => _options.Pilots.SupplierPrepayment,
             PaymentAccountingEventKind.SarrafCashPayment => _options.Pilots.SarrafPayment,
+            PaymentAccountingEventKind.ExpensePayment => _options.Pilots.ExpensePayment,
+            PaymentAccountingEventKind.CommissionPayment => _options.Pilots.CommissionPayment,
             _ => false
         };
 
-    private AccountingPostLine[] BuildLines(
+    /// <summary>
+    /// The liability an expense-settling payment must debit, resolved from the expense that
+    /// accrued it so the settlement can never land on a different account than the accrual.
+    /// </summary>
+    private sealed record ExpenseSettlement(
+        int PayableAccountId,
+        AccountingPartyType? PartyType,
+        int? PartyId);
+
+    private static AccountingPostLine[] BuildLines(
         PaymentTransaction payment,
         PaymentAccountingEventKind eventKind,
-        AccountingSettings settings)
+        AccountingSettings settings,
+        ExpenseSettlement? settlement)
     {
+        if (eventKind is PaymentAccountingEventKind.ExpensePayment
+            or PaymentAccountingEventKind.CommissionPayment)
+        {
+            return BuildSettlementLines(payment, settings, settlement!);
+        }
+
         var (partyAccountId, partyType, partyId) = eventKind switch
         {
             PaymentAccountingEventKind.CustomerReceipt =>
@@ -223,72 +253,115 @@ public sealed class PaymentAccountingAdapter(
         return cashIsDebit ? [cashLine, partyLine] : [partyLine, cashLine];
     }
 
+    private static AccountingPostLine[] BuildSettlementLines(
+        PaymentTransaction payment,
+        AccountingSettings settings,
+        ExpenseSettlement settlement)
+    {
+        var rate = payment.AppliedFxRateToUsd!.Value;
+
+        return
+        [
+            new AccountingPostLine(
+                settlement.PayableAccountId,
+                Debit: payment.AmountUsd,
+                Credit: 0m,
+                payment.Currency,
+                payment.Amount,
+                rate,
+                settlement.PartyType,
+                settlement.PartyId,
+                ContractId: payment.ContractId,
+                ShipmentId: payment.ShipmentId,
+                Description: "Expense liability settled"),
+            new AccountingPostLine(
+                settings.CashBankControlAccountId,
+                Debit: 0m,
+                Credit: payment.AmountUsd,
+                payment.Currency,
+                payment.Amount,
+                rate,
+                CashAccountId: payment.CashAccountId,
+                Description: "Cash paid")
+        ];
+    }
+
     private static bool IsCashInflow(PaymentAccountingEventKind eventKind)
         => eventKind is PaymentAccountingEventKind.CustomerReceipt
             or PaymentAccountingEventKind.CustomerAdvance;
 
+    // Every non-inflow kind, including the expense settlements, moves cash out.
     private static PaymentDirection ExpectedDirection(PaymentAccountingEventKind eventKind)
         => IsCashInflow(eventKind) ? PaymentDirection.In : PaymentDirection.Out;
 
-    private async Task<(int CompanyId, string? SkipReason)> ResolveCompanyAndSkipReasonAsync(
-        PaymentTransaction payment,
-        PaymentAccountingEventKind eventKind,
-        CancellationToken cancellationToken)
+    private async Task<(int CompanyId, string? SkipReason, ExpenseSettlement? Settlement)>
+        ResolveCompanyAndSkipReasonAsync(
+            PaymentTransaction payment,
+            PaymentAccountingEventKind eventKind,
+            CancellationToken cancellationToken)
     {
         if (!_options.Enabled)
-            return (0, "ACCOUNTING_DISABLED");
+            return (0, "ACCOUNTING_DISABLED", null);
         if (!IsPilotEnabled(eventKind))
-            return (0, "PILOT_DISABLED");
+            return (0, "PILOT_DISABLED", null);
 
         if (payment.Direction != ExpectedDirection(eventKind))
-            return (0, "DIRECTION_MISMATCH");
+            return (0, "DIRECTION_MISMATCH", null);
 
-        var partyIsPresent = eventKind switch
+        // Expense settlements take their party from the expense that accrued the liability, and
+        // that party is legitimately absent for accrued/commission expenses, so they are exempt
+        // from the party requirement the party-facing kinds enforce.
+        var isExpenseSettlement = eventKind is PaymentAccountingEventKind.ExpensePayment
+            or PaymentAccountingEventKind.CommissionPayment;
+        if (!isExpenseSettlement)
         {
-            PaymentAccountingEventKind.CustomerReceipt or PaymentAccountingEventKind.CustomerAdvance
-                => payment.CustomerId.HasValue,
-            PaymentAccountingEventKind.SupplierPayment or PaymentAccountingEventKind.SupplierPrepayment
-                => payment.SupplierId.HasValue,
-            PaymentAccountingEventKind.SarrafCashPayment => payment.SarrafId.HasValue,
-            _ => false
-        };
-        if (!partyIsPresent)
-            return (0, "PARTY_MISSING");
+            var partyIsPresent = eventKind switch
+            {
+                PaymentAccountingEventKind.CustomerReceipt or PaymentAccountingEventKind.CustomerAdvance
+                    => payment.CustomerId.HasValue,
+                PaymentAccountingEventKind.SupplierPayment or PaymentAccountingEventKind.SupplierPrepayment
+                    => payment.SupplierId.HasValue,
+                PaymentAccountingEventKind.SarrafCashPayment => payment.SarrafId.HasValue,
+                _ => false
+            };
+            if (!partyIsPresent)
+                return (0, "PARTY_MISSING", null);
+        }
 
         if (payment.CashAccountId <= 0)
-            return (0, "CASH_ACCOUNT_MISSING");
+            return (0, "CASH_ACCOUNT_MISSING", null);
         if (payment.Amount <= 0m || payment.AmountUsd <= 0m)
-            return (0, "INVALID_PAYMENT_AMOUNT");
+            return (0, "INVALID_PAYMENT_AMOUNT", null);
 
         var rate = payment.AppliedFxRateToUsd;
         if (!rate.HasValue || rate.Value <= 0m)
-            return (0, "INVALID_PAYMENT_FX");
+            return (0, "INVALID_PAYMENT_FX", null);
         if (SystemCurrency.IsBaseCurrency(payment.Currency) && rate.Value != 1m)
-            return (0, "INVALID_PAYMENT_FX");
+            return (0, "INVALID_PAYMENT_FX", null);
 
         // The posting service re-derives the functional amount from the currency pair, so a
         // legacy row whose AmountUsd drifted from Amount x rate must stay legacy-only rather
         // than fail the whole payment.
         var expectedUsd = decimal.Round(payment.Amount * rate.Value, 4, MidpointRounding.AwayFromZero);
         if (payment.AmountUsd != expectedUsd)
-            return (0, "INVALID_PAYMENT_CONVERSION");
+            return (0, "INVALID_PAYMENT_CONVERSION", null);
 
         var companyId = await companyResolver.ResolveAsync(payment, cancellationToken);
         if (companyId is null)
-            return (0, "PAYMENT_COMPANY_UNKNOWN");
+            return (0, "PAYMENT_COMPANY_UNKNOWN", null);
 
         var settings = await db.AccountingSettings
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.CompanyId == companyId.Value, cancellationToken);
         if (settings is null)
-            return (companyId.Value, "ACCOUNTING_SETTINGS_MISSING");
+            return (companyId.Value, "ACCOUNTING_SETTINGS_MISSING", null);
         if (!string.Equals(settings.FunctionalCurrencyCode?.Trim(), "USD", StringComparison.OrdinalIgnoreCase))
-            return (companyId.Value, "UNSUPPORTED_FUNCTIONAL_CURRENCY");
+            return (companyId.Value, "UNSUPPORTED_FUNCTIONAL_CURRENCY", null);
 
         var configuredAccountIds = GetConfiguredAccountIds(settings);
         if (configuredAccountIds.Any(x => x <= 0)
             || configuredAccountIds.Distinct().Count() != configuredAccountIds.Length)
-            return (companyId.Value, "ACCOUNTING_SETTINGS_INCOMPLETE");
+            return (companyId.Value, "ACCOUNTING_SETTINGS_INCOMPLETE", null);
 
         var validAccountCount = await db.Accounts.AsNoTracking().CountAsync(
             x => configuredAccountIds.Contains(x.Id)
@@ -296,7 +369,30 @@ public sealed class PaymentAccountingAdapter(
                 && x.IsActive,
             cancellationToken);
         if (validAccountCount != configuredAccountIds.Length)
-            return (companyId.Value, "ACCOUNTING_SETTINGS_INVALID_ACCOUNTS");
+            return (companyId.Value, "ACCOUNTING_SETTINGS_INVALID_ACCOUNTS", null);
+
+        ExpenseSettlement? settlement = null;
+        if (isExpenseSettlement)
+        {
+            if (!payment.ExpenseTransactionId.HasValue)
+                return (companyId.Value, "EXPENSE_LINK_MISSING", null);
+
+            var expense = await db.ExpenseTransactions
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == payment.ExpenseTransactionId.Value, cancellationToken);
+            if (expense is null)
+                return (companyId.Value, "EXPENSE_NOT_FOUND", null);
+
+            var payableAccountId = await expenseAccounting.ResolvePayableAccountIdAsync(
+                expense,
+                companyId.Value,
+                cancellationToken);
+            if (payableAccountId is null)
+                return (companyId.Value, "EXPENSE_PAYABLE_KIND_NOT_SET", null);
+
+            var (partyType, partyId) = ExpenseAccountingAdapter.ResolveParty(expense);
+            settlement = new ExpenseSettlement(payableAccountId.Value, partyType, partyId);
+        }
 
         // The cash account must belong to the journal company when it declares an owner;
         // an unowned legacy cash account stays usable so the pilot does not block operations.
@@ -306,7 +402,7 @@ public sealed class PaymentAccountingAdapter(
             .Select(x => x.CompanyId)
             .SingleOrDefaultAsync(cancellationToken);
         if (cashAccountCompanyId.HasValue && cashAccountCompanyId.Value != companyId.Value)
-            return (companyId.Value, "CASH_ACCOUNT_COMPANY_MISMATCH");
+            return (companyId.Value, "CASH_ACCOUNT_COMPANY_MISMATCH", null);
 
         if (payment.ContractId.HasValue)
         {
@@ -316,10 +412,10 @@ public sealed class PaymentAccountingAdapter(
                 .Select(x => (int?)x.CompanyId)
                 .SingleOrDefaultAsync(cancellationToken);
             if (contractCompanyId.HasValue && contractCompanyId.Value != companyId.Value)
-                return (companyId.Value, "COMPANY_MISMATCH");
+                return (companyId.Value, "COMPANY_MISMATCH", null);
         }
 
-        return (companyId.Value, null);
+        return (companyId.Value, null, settlement);
     }
 
     private async Task<JournalEntry?> FindJournalAsync(

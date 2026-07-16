@@ -22,4 +22,10 @@ public sealed class AccountingPilotOptions
     public bool SupplierPayment { get; set; }
     public bool SupplierPrepayment { get; set; }
     public bool SarrafPayment { get; set; }
+
+    // Stage 5 — expenses, freight, commission. Expense accrues the liability; the two
+    // payment flags settle it, so they are normally enabled together with Expense.
+    public bool Expense { get; set; }
+    public bool ExpensePayment { get; set; }
+    public bool CommissionPayment { get; set; }
 }

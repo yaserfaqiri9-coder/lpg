@@ -35,6 +35,7 @@ public class PaymentsController : Controller
     // نشود یا خاموش باشد، مسیر قدیمی هیچ تغییری نمی‌کند.
     private readonly Services.Accounting.IPaymentAccountingAdapter? _paymentAccounting;
     private readonly Services.Accounting.IViaSarrafAccountingAdapter? _viaSarrafAccounting;
+    private readonly Services.Accounting.IExpenseAccountingAdapter? _expenseAccounting;
     private const int IndexPageSize = 20;
     private const int LookupLimit = 200;
     public const string ViaSarrafSupplierLedgerSourceType = "SupplierViaSarrafPayment";
@@ -56,7 +57,8 @@ public class PaymentsController : Controller
         IMemoryCache? summaryCache = null,
         IFormTokenGuard? formTokens = null,
         Services.Accounting.IPaymentAccountingAdapter? paymentAccounting = null,
-        Services.Accounting.IViaSarrafAccountingAdapter? viaSarrafAccounting = null)
+        Services.Accounting.IViaSarrafAccountingAdapter? viaSarrafAccounting = null,
+        Services.Accounting.IExpenseAccountingAdapter? expenseAccounting = null)
     {
         _db = db;
         _currencyConversion = currencyConversion;
@@ -69,6 +71,7 @@ public class PaymentsController : Controller
         _formTokens = formTokens ?? new FormTokenGuard(db);
         _paymentAccounting = paymentAccounting;
         _viaSarrafAccounting = viaSarrafAccounting;
+        _expenseAccounting = expenseAccounting;
     }
 
     public PaymentsController(
@@ -3890,6 +3893,19 @@ public class PaymentsController : Controller
         cashOut.LedgerEntryId = cashOutLedger.Id;
         mainPayment.RelatedExpenseTransactionId = expense.Id;
         await _db.SaveChangesAsync();
+
+        // مرحله ۵ — Dual-write کمیسیون داخل همان Transaction قدیمی: اول مصرف (بدهی کمیسیون
+        // را می‌سازد) و بعد خروج نقدی (همان بدهی را تسویه می‌کند). هر کدام Flag جدا دارند،
+        // پس اگر فقط یکی روشن باشد، طرف دیگر Skip می‌شود و legacy دست‌نخورده می‌ماند.
+        if (_expenseAccounting is not null)
+        {
+            await _expenseAccounting.TryPostExpenseAsync(expense);
+        }
+
+        if (_paymentAccounting is not null)
+        {
+            await _paymentAccounting.TryPostPaymentAsync(cashOut);
+        }
 
         await _audit.LogAsync(
             nameof(ExpenseTransaction),
