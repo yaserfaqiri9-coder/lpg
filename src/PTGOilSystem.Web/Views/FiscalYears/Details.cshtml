@@ -1,0 +1,116 @@
+@using PTGOilSystem.Web.Models.Accounting
+@model FiscalYearDetailsViewModel
+@{
+    ViewData["Title"] = $"سال مالی {Model.Year.Name}";
+    var year = Model.Year;
+}
+
+<div class="ak-list-page">
+    <partial name="~/Views/Shared/Components/Ak/_AkPageHeader.cshtml"
+             model="@(($"سال مالی {year.Name}", false,
+                       (string?)null, (string?)null, (string?)null, (string?)null,
+                       (string?)"بازگشت", (string?)"bi-arrow-right",
+                       (string?)Url.Action("Index", new { companyId = year.CompanyId })))" />
+
+    <div class="ak-table-wrap">
+        <table class="ak-table" aria-label="اطلاعات سال مالی">
+            <tbody>
+                <tr><th class="ak-col-grow">شرکت</th><td>@year.CompanyName</td></tr>
+                <tr><th>بازه سال</th><td>@DateDisplay.Date(year.StartDate) — @DateDisplay.Date(year.EndDate)</td></tr>
+                <tr>
+                    <th>وضعیت</th>
+                    <td><span class="ak-status @FiscalStatusDisplay.YearCss(year.Status)">@FiscalStatusDisplay.YearLabel(year.Status)</span></td>
+                </tr>
+                <tr><th>سال جاری</th><td>@(year.IsCurrent ? "بله" : "خیر")</td></tr>
+                <tr><th>تعداد دوره‌ها</th><td>@year.PeriodCount</td></tr>
+                <tr><th>تعداد اسناد پست‌شده</th><td>@Model.TotalJournalCount</td></tr>
+                <tr><th>جمع بدهکار</th><td>@NumberDisplay.Money(Model.TotalDebit)</td></tr>
+                <tr><th>جمع بستانکار</th><td>@NumberDisplay.Money(Model.TotalCredit)</td></tr>
+                <tr>
+                    <th>اختلاف</th>
+                    <td>
+                        <span class="ak-status @(Model.IsBalanced ? "is-active" : "is-inactive")">@NumberDisplay.Money(Model.Difference)</span>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="ak-table-wrap">
+        <table class="ak-table" aria-label="دوره‌های مالی">
+            <thead>
+                <tr>
+                    <th>شماره</th>
+                    <th class="ak-col-grow">دوره</th>
+                    <th>شروع</th>
+                    <th>پایان</th>
+                    <th>بازه AccountingDate</th>
+                    <th>وضعیت قفل</th>
+                    <th>اسناد</th>
+                    <th>بدهکار</th>
+                    <th>بستانکار</th>
+                    <th>اختلاف</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var period in Model.Periods)
+                {
+                    <tr>
+                        <td>@period.PeriodNumber</td>
+                        <td class="ak-col-grow">@period.Name</td>
+                        <td>@DateDisplay.Date(period.StartDate)</td>
+                        <td>@DateDisplay.Date(period.EndDate)</td>
+                        <td>@DateDisplay.Date(period.StartDate) — @DateDisplay.Date(period.EndDate)</td>
+                        <td>
+                            <span class="ak-status @FiscalStatusDisplay.PeriodCss(period.Status)">@FiscalStatusDisplay.PeriodLabel(period.Status)</span>
+                            @if (period.LockedAt is not null)
+                            {
+                                <span class="ak-hint">@DateDisplay.DateTime(period.LockedAt) — @(period.LockedByUser ?? "-")</span>
+                            }
+                        </td>
+                        <td>@period.JournalCount</td>
+                        <td>@NumberDisplay.Money(period.TotalDebit)</td>
+                        <td>@NumberDisplay.Money(period.TotalCredit)</td>
+                        <td>
+                            <span class="ak-status @(period.IsBalanced ? "is-active" : "is-inactive")">@NumberDisplay.Money(period.Difference)</span>
+                        </td>
+                    </tr>
+                }
+                @if (Model.Periods.Count == 0)
+                {
+                    <tr><td colspan="10"><div class="ak-empty">دوره‌ای ثبت نشده است</div></td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="ak-table-wrap">
+        <table class="ak-table" aria-label="اجراهای بستن سال">
+            <thead>
+                <tr>
+                    <th>شناسه</th>
+                    <th>وضعیت</th>
+                    <th>شروع</th>
+                    <th>پایان</th>
+                    <th class="ak-col-grow">پیام</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var run in Model.CloseRuns)
+                {
+                    <tr>
+                        <td>@run.RunId</td>
+                        <td>@FiscalStatusDisplay.CloseRunLabel(run.Status)</td>
+                        <td>@DateDisplay.DateTime(run.StartedAt)</td>
+                        <td>@DateDisplay.DateTime(run.CompletedAt)</td>
+                        <td class="ak-col-grow">@(run.FailureMessage ?? "-")</td>
+                    </tr>
+                }
+                @if (Model.CloseRuns.Count == 0)
+                {
+                    <tr><td colspan="5"><div class="ak-empty">هیچ اجرای بستنی ثبت نشده — Trial Close مرحله ۱۳ و Final Close مرحله ۱۴ است</div></td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>

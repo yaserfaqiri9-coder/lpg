@@ -26,13 +26,27 @@ public enum FiscalYearStatus
     Draft = 0,
     Open = 1,
     Closing = 2,
-    Closed = 3
+    Closed = 3,
+
+    /// <summary>
+    /// سالِ بسته‌ای که عمداً دوباره باز شده (مرحله ۱۵). هیچ مسیری امروز این مقدار را نمی‌نویسد؛
+    /// فقط برای نمایش و برای اینکه قفلِ دوره از همین امروز تکلیفش را بداند اضافه شده است.
+    /// </summary>
+    Reopened = 4
 }
 
 public enum FiscalPeriodStatus
 {
     Open = 1,
-    Closed = 2
+
+    /// <summary>وضعیت قدیمی. از نظر ثبت دقیقاً مثل <see cref="HardLocked"/> رفتار می‌کند.</summary>
+    Closed = 2,
+
+    /// <summary>ثبت عادی ممنوع؛ فقط عملیات استثناییِ دارای Permission و Audit.</summary>
+    SoftLocked = 3,
+
+    /// <summary>ثبت، برگشت، Repost و Backdate بدون استثنا ممنوع.</summary>
+    HardLocked = 4
 }
 
 public enum FiscalYearCloseRunStatus

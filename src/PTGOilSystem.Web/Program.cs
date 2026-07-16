@@ -71,6 +71,9 @@ builder.Services.AddScoped<ISupplierPaymentAllocationAccountingAdapter, Supplier
 builder.Services.AddScoped<ICompanyOwnershipReportService, CompanyOwnershipReportService>();
 // مرحله ۹ — گزارش فقط‌خواندنیِ آمادگی Cutover. هیچ Flag را روشن و هیچ Migration را اجرا نمی‌کند.
 builder.Services.AddScoped<IAccountingReadinessService, AccountingReadinessService>();
+// مرحله ۱۰ — صفحه‌های سال مالی. Overview فقط می‌خواند؛ Provisioning تنها مسیر نوشتنِ آن است.
+builder.Services.AddScoped<IFiscalYearOverviewService, FiscalYearOverviewService>();
+builder.Services.AddScoped<IFiscalYearProvisioningService, FiscalYearProvisioningService>();
 builder.Services.AddScoped<IPaymentCompanyResolver, PaymentCompanyResolver>();
 builder.Services.AddScoped<IExpenseAccountingAdapter, ExpenseAccountingAdapter>();
 builder.Services.AddScoped<IPaymentAccountingAdapter, PaymentAccountingAdapter>();

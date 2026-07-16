@@ -1,0 +1,156 @@
+@using PTGOilSystem.Web.Models.Accounting
+@model FiscalYearIndexViewModel
+@{
+    ViewData["Title"] = "سال مالی";
+    var year = Model.CurrentYear;
+}
+
+<div class="ak-list-page">
+    <partial name="~/Views/Shared/Components/Ak/_AkPageHeader.cshtml"
+             model="@(("سال مالی", false,
+                       (string?)null, (string?)null, (string?)null, (string?)null,
+                       (string?)null, (string?)null, (string?)null))" />
+
+    <form method="get" asp-action="Index" class="ak-form">
+        <div class="ak-field">
+            <label class="ak-label" for="companyId">شرکت</label>
+            <select class="form-select" id="companyId" name="companyId" onchange="this.form.submit()">
+                @foreach (var company in Model.Companies)
+                {
+                    <option value="@company.CompanyId" selected="@company.IsSelected">@company.Name</option>
+                }
+            </select>
+        </div>
+    </form>
+
+    @if (Model.ReadinessFindings.Count > 0)
+    {
+        <div class="alert alert-warning" role="alert">
+            <ul class="mb-0">
+                @foreach (var finding in Model.ReadinessFindings)
+                {
+                    <li><strong>@finding.Code</strong> — @finding.Title: @finding.RequiredAction</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @if (year is null)
+    {
+        <div class="ak-empty"><i class="bi bi-calendar-x" aria-hidden="true"></i>برای این شرکت هیچ سال مالی ثبت نشده است</div>
+    }
+    else
+    {
+        <div class="ak-list">
+            <div class="ak-table-wrap">
+                <table class="ak-table" aria-label="سال مالی جاری">
+                    <tbody>
+                        <tr><th class="ak-col-grow">شرکت</th><td>@year.CompanyName</td></tr>
+                        <tr><th>سال مالی جاری</th><td>@year.Name</td></tr>
+                        <tr><th>تاریخ شروع</th><td>@DateDisplay.Date(year.StartDate)</td></tr>
+                        <tr><th>تاریخ پایان</th><td>@DateDisplay.Date(year.EndDate)</td></tr>
+                        <tr>
+                            <th>وضعیت سال</th>
+                            <td><span class="ak-status @FiscalStatusDisplay.YearCss(year.Status)">@FiscalStatusDisplay.YearLabel(year.Status)</span></td>
+                        </tr>
+                        <tr><th>تعداد دوره‌ها</th><td>@year.PeriodCount</td></tr>
+                        <tr>
+                            <th>دوره جاری</th>
+                            <td>
+                                @if (year.CurrentPeriod is null)
+                                {
+                                    <span>-</span>
+                                }
+                                else
+                                {
+                                    <span>@year.CurrentPeriod.Name</span>
+                                    <span class="ak-status @FiscalStatusDisplay.PeriodCss(year.CurrentPeriod.Status)">@FiscalStatusDisplay.PeriodLabel(year.CurrentPeriod.Status)</span>
+                                }
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>بستن نهایی سال</th>
+                            <td>
+                                @if (year.ClosedAt is null)
+                                {
+                                    <span>هنوز بسته نشده — مرحله ۱۴</span>
+                                }
+                                else
+                                {
+                                    <span>@DateDisplay.DateTime(year.ClosedAt) — @(year.ClosedByUser ?? "-")</span>
+                                }
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>آخرین اجرای بستن</th>
+                            <td>
+                                @if (Model.LastCloseRun is null)
+                                {
+                                    <span>هیچ اجرای بستنی ثبت نشده — Trial Close مرحله ۱۳ است</span>
+                                }
+                                else
+                                {
+                                    <span>@FiscalStatusDisplay.CloseRunLabel(Model.LastCloseRun.Status) — @DateDisplay.DateTime(Model.LastCloseRun.StartedAt)</span>
+                                }
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="ak-table-wrap">
+            <table class="ak-table" aria-label="دوره‌های سال مالی">
+                <thead>
+                    <tr>
+                        <th>شماره</th>
+                        <th class="ak-col-grow">دوره</th>
+                        <th>شروع</th>
+                        <th>پایان</th>
+                        <th>وضعیت</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var period in year.Periods)
+                    {
+                        <tr>
+                            <td>@period.PeriodNumber</td>
+                            <td class="ak-col-grow">@period.Name</td>
+                            <td>@DateDisplay.Date(period.StartDate)</td>
+                            <td>@DateDisplay.Date(period.EndDate)</td>
+                            <td><span class="ak-status @FiscalStatusDisplay.PeriodCss(period.Status)">@FiscalStatusDisplay.PeriodLabel(period.Status)</span></td>
+                        </tr>
+                    }
+                    @if (year.Periods.Count == 0)
+                    {
+                        <tr><td colspan="5"><div class="ak-empty">دوره‌ای ثبت نشده است</div></td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="ak-page-actions">
+            <a class="btn btn-light" asp-action="Details" asp-route-id="@year.FiscalYearId">
+                <i class="bi bi-eye" aria-hidden="true"></i><span>مشاهده جزئیات سال</span>
+            </a>
+            @if (Model.CanManage && Model.NextYear.IsAllowed && Model.SelectedCompanyId is int companyId)
+            {
+                <form asp-action="CreateNextYear" method="post" class="d-inline"
+                      data-ptg-confirm="true" data-ptg-confirm-title="ایجاد سال مالی بعدی"
+                      data-ptg-confirm-message="سال مالی بعدی به‌صورت پیش‌نویس ساخته شود؟">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="companyId" value="@companyId" />
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                        <span>ایجاد سال مالی بعدی (@Model.NextYear.ProposedName)</span>
+                    </button>
+                </form>
+            }
+        </div>
+
+        @if (!Model.NextYear.IsAllowed && !string.IsNullOrWhiteSpace(Model.NextYear.BlockedReason))
+        {
+            <p class="ak-hint">ایجاد سال مالی بعدی مجاز نیست: @Model.NextYear.BlockedReason</p>
+        }
+    }
+</div>
